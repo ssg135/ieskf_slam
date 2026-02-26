@@ -15,7 +15,6 @@ namespace ROSNoetic{
 
         cloud_subscriber = nh.subscribe(lidar_topic, 100, &IESKFFrontEndWrapper::lidarCloudMsgCallBack, this);
         imu_subscriber = nh.subscribe(imu_topic, 100, &IESKFFrontEndWrapper::imuMsgCallBack, this);
-        odometry_subscriber = nh.subscribe("/odometry", 100, &IESKFFrontEndWrapper::odometryMsgCallBack, this);
         current_pointcloud_publisher = nh.advertise<sensor_msgs::PointCloud2>("curr_cloud", 100);
 
         int lidar_type = 0;
@@ -44,19 +43,6 @@ namespace ROSNoetic{
         imu.time_stamp.fromNSec(msg->header.stamp.toNSec());
         front_end_ptr->addImu(imu);
     }
-    void IESKFFrontEndWrapper::odometryMsgCallBack(const nav_msgs::OdometryConstPtr& msg){
-        IESKFSLAM::Pose pose;
-        pose.time_stamp.fromNSec(msg->header.stamp.toNSec());
-        pose.position << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
-        pose.rotation.w() = msg->pose.pose.orientation.w;
-        pose.rotation.x() = msg->pose.pose.orientation.x;
-        pose.rotation.y() = msg->pose.pose.orientation.y;
-        pose.rotation.z() = msg->pose.pose.orientation.z;
-        // 保存当前位姿，用于发布TF
-        curr_q = pose.rotation;
-        curr_t = pose.position;
-        front_end_ptr->addPose(pose);
-    }
     void IESKFFrontEndWrapper::run(){
         ros::Rate rate(500);
         while(ros::ok()){
@@ -68,21 +54,7 @@ namespace ROSNoetic{
         }
     }
     void IESKFFrontEndWrapper::publishMsg(){
-        curr_pointcloud = front_end_ptr->readCurrentPointCloud();
-        sensor_msgs::PointCloud2 msg;
-        pcl::toROSMsg(curr_pointcloud, msg);
-        ros::Time now = ros::Time::now();
-        msg.header.frame_id = "map";
-        msg.header.stamp = now;
-        current_pointcloud_publisher.publish(msg);
-
-        // 发布 TF: map -> livox_frame
-        tf::Transform transform;
-        transform.setOrigin(tf::Vector3(curr_t.x(), curr_t.y(), curr_t.z()));
-        transform.setRotation(tf::Quaternion(curr_q.x(), curr_q.y(), curr_q.z(), curr_q.w()));
-        tf_broadcaster.sendTransform(
-            tf::StampedTransform(transform, now, "map", "livox_frame")
-        );
+        
     }
 
 }

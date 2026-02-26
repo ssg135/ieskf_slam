@@ -10,7 +10,7 @@ namespace IESKFSLAM{
     struct EIGEN_ALIGN16 Point{
         PCL_ADD_POINT4D;
         float intensity;
-        std::uint32_t offset_time;
+        std::uint32_t offset_time;//ns
         std::int32_t ring;
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     };

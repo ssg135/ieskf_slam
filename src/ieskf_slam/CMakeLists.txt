@@ -131,9 +131,11 @@ add_definitions(-DPROJ_DIR="${PROJECT_SOURCE_DIR}")
 ## ============================================
 ## 1) 核心算法库 ieskf_slam_lib（与ROS无关）
 ## ============================================
-## 包含 FrontEnd 等核心模块的实现
+## 包含 FrontEnd、IESKF 等核心模块的实现
 add_library(ieskf_slam_lib
-  src/ieskf_slam/frontend.cpp
+  src/ieskf_slam/modules/frontend/frontend.cpp
+  src/ieskf_slam/modules/ieskf/ieskf.cpp
+  src/ieskf_slam/modules/map/rect_map_manager.cpp
 )
 target_link_libraries(ieskf_slam_lib
   ${PCL_LIBRARIES}
