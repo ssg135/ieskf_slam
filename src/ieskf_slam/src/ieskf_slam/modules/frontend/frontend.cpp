@@ -7,6 +7,7 @@ namespace IESKFSLAM{
     FrontEnd::FrontEnd(const std::string&config_path, const std::string&prefix):ModuleBase(config_path, prefix, "FrontEnd"){
         ieskf_ptr = std::make_shared<IESKF>(config_path, "ieskf");
         map_ptr = std::make_shared<RectMapManager>(config_path, "map");
+        fbpropagate_ptr = std::make_shared<FrontbackPropagate>();
     }
     FrontEnd::~FrontEnd(){}
     void FrontEnd::addImu(const IMU& imu){
@@ -30,7 +31,8 @@ namespace IESKFSLAM{
                 initState(mg);
                 return false;
             }
-            std::cout<<mg.imus.size()<<" scale: "<<imu_scale<<std::endl;
+            fbpropagate_ptr->propagate(mg, ieskf_ptr);
+            //std::cout<<mg.imus.size()<<" scale: "<<imu_scale<<std::endl;
             return true;
         }
         return false;
@@ -88,8 +90,13 @@ namespace IESKFSLAM{
         Eigen::Vector3d mean_acc = sum_acc / double(mg.imus.size());
         imu_scale = GRAVITY / mean_acc.norm();
         x.gravity = -mean_acc / mean_acc.norm() * GRAVITY;
+        fbpropagate_ptr->imu_scale = imu_scale;
+        fbpropagate_ptr->last_imu = mg.imus.back();
         ieskf_ptr->setX(x);
         imu_inited = true;
+    }
+    const IESKF::State18& FrontEnd::readState()const{
+        return ieskf_ptr->getX();
     }
 
 }

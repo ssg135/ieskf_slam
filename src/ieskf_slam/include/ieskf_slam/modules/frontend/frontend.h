@@ -9,6 +9,7 @@
 #include "ieskf_slam/type/measure_group.h"
 #include "ieskf_slam/modules/ieskf/ieskf.h"
 #include "ieskf_slam/modules/map/rect_map_manager.h"
+#include "ieskf_slam/modules/frontbackPropagate/frontback_propagate.h"
 
 namespace IESKFSLAM{
     class FrontEnd: private ModuleBase{
@@ -20,6 +21,7 @@ namespace IESKFSLAM{
         PCLPointCloud current_pointcloud;
         IESKF::Ptr ieskf_ptr;
         RectMapManager::Ptr map_ptr;
+        FrontbackPropagate::Ptr fbpropagate_ptr;
         bool imu_inited =false;
         double imu_scale = 1;
         public:
@@ -32,5 +34,6 @@ namespace IESKFSLAM{
         void initState(MeasureGroup& mg);
         bool track();
         const PCLPointCloud& readCurrentPointCloud() const;
+        const IESKF::State18& readState() const;
     };
 }

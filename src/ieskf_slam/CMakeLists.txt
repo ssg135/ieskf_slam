@@ -136,6 +136,7 @@ add_library(ieskf_slam_lib
   src/ieskf_slam/modules/frontend/frontend.cpp
   src/ieskf_slam/modules/ieskf/ieskf.cpp
   src/ieskf_slam/modules/map/rect_map_manager.cpp
+  src/ieskf_slam/modules/frontbackPropagate/frontback_propagate.cpp
 )
 target_link_libraries(ieskf_slam_lib
   ${PCL_LIBRARIES}

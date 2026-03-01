@@ -1,6 +1,8 @@
 #include "wrapper/ros_noetic/ieskf_frontend_noetic_wrapper.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "ieskf_slam/globaldefine.h"
 #include <iostream>
+#include <nav_msgs/Path.h>
 
 namespace ROSNoetic{
     IESKFFrontEndWrapper::IESKFFrontEndWrapper(ros::NodeHandle& nh){
@@ -16,7 +18,7 @@ namespace ROSNoetic{
         cloud_subscriber = nh.subscribe(lidar_topic, 100, &IESKFFrontEndWrapper::lidarCloudMsgCallBack, this);
         imu_subscriber = nh.subscribe(imu_topic, 100, &IESKFFrontEndWrapper::imuMsgCallBack, this);
         current_pointcloud_publisher = nh.advertise<sensor_msgs::PointCloud2>("curr_cloud", 100);
-
+        path_publisher = nh.advertise<nav_msgs::Path>("path", 100);
         int lidar_type = 0;
         nh.param<int>("wrapper/lidar_type", lidar_type, AVIA);
         if(lidar_type == AVIA){
@@ -54,7 +56,15 @@ namespace ROSNoetic{
         }
     }
     void IESKFFrontEndWrapper::publishMsg(){
-        
+        static nav_msgs::Path path;
+        auto X = front_end_ptr->readState();
+        path.header.frame_id = "map";
+        geometry_msgs::PoseStamped pst;
+        pst.pose.position.x = X.position.x();
+        pst.pose.position.y = X.position.y();
+        pst.pose.position.z = X.position.z();
+        path.poses.push_back(pst);
+        path_publisher.publish(path);
     }
 
 }

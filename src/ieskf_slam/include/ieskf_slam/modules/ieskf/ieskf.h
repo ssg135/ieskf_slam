@@ -19,10 +19,12 @@ namespace IESKFSLAM{
             };
         private:
             State18 X;
+            Eigen::Matrix<double,18,18> P;
+            Eigen::Matrix<double,12,12> Q;
         public:
             IESKF(const std::string&config_path,const std::string&prefix);
             ~IESKF();
-            void predict(const IMU& imu, double dt);
+            void predict(IMU& imu, double dt);
             bool update();
             const State18& getX();
             void setX(const State18& x_in);
