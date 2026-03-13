@@ -10,6 +10,7 @@
 #include "ieskf_slam/modules/ieskf/ieskf.h"
 #include "ieskf_slam/modules/map/rect_map_manager.h"
 #include "ieskf_slam/modules/frontbackPropagate/frontback_propagate.h"
+#include "ieskf_slam/modules/frontend/lio_zh_model.h"
 
 namespace IESKFSLAM{
     class FrontEnd: private ModuleBase{
@@ -18,12 +19,16 @@ namespace IESKFSLAM{
         std::deque<IMU> imu_deque;
         std::deque<PointCloud> pointcloud_deque;
         std::deque<Pose> pose_deque;
-        PCLPointCloud current_pointcloud;
         IESKF::Ptr ieskf_ptr;
         RectMapManager::Ptr map_ptr;
         FrontbackPropagate::Ptr fbpropagate_ptr;
+        LIOZHModel::Ptr lio_zh_model_ptr;
+        VoxelFilter voxel_filter;
+        PCLPointCloudPtr filter_point_cloud_ptr;
         bool imu_inited =false;
         double imu_scale = 1;
+        Eigen::Quaterniond extrin_r;
+        Eigen::Vector3d extrin_t;
         public:
         FrontEnd(const std::string&config_path, const std::string&prefix);
         ~FrontEnd();

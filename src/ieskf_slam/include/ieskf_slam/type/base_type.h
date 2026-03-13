@@ -6,5 +6,12 @@ namespace IESKFSLAM{
     using VoxelFilter = pcl::VoxelGrid<Point>;
     using KdTree = pcl::KdTreeFLANN<Point>;
     using KdTreePtr = KdTree::Ptr;
+    using KdTreeConstPtr = KdTree::ConstPtr;
     const double GRAVITY = 9.81;
+    template<typename _first, typename _second, typename _third>
+    struct loss_type{
+        _first first;
+        _second second;
+        _third third;
+    };
 }

@@ -1,8 +1,19 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(ieskf_slam)
 
+set(CMAKE_BUILD_TYPE "Release")
+add_compile_options(-O3)
+
 ## 使用C++14标准（Eigen3、PCL等需要至少C++14）
 add_compile_options(-std=c++14)
+
+## 添加编译警告选项，帮助发现潜在错误
+add_compile_options(
+  -Wall              # 启用所有常见警告
+  -Wextra            # 额外警告
+  -Wuninitialized    # 警告未初始化变量（需要 -O1 或更高优化级别）
+  -Wmaybe-uninitialized  # 警告可能未初始化的变量
+)
 
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
@@ -19,6 +30,8 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GLOG REQUIRED libglog)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -123,6 +136,7 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
   ${YAML_CPP_INCLUDE_DIR}
+  ${GLOG_INCLUDE_DIRS}
 )
 
 ## 定义 PROJ_DIR 宏，使 globaldefine.h 中的 PROJ_DIR 指向包的实际路径
@@ -141,6 +155,7 @@ add_library(ieskf_slam_lib
 target_link_libraries(ieskf_slam_lib
   ${PCL_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
+  ${GLOG_LIBRARIES}
 )
 
 ## ============================================
@@ -172,6 +187,7 @@ target_link_libraries(ieskf_frontend_node
   ieskf_slam_lib
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
+  ${GLOG_LIBRARIES}
 )
 
 #############

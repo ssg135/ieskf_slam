@@ -1,8 +1,9 @@
 #include "wrapper/ros_noetic/ieskf_frontend_noetic_wrapper.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "ieskf_slam/globaldefine.h"
-#include <iostream>
+#include "ieskf_slam/math/math.h"
 #include <nav_msgs/Path.h>
+#include <pcl/common/transforms.h>
 
 namespace ROSNoetic{
     IESKFFrontEndWrapper::IESKFFrontEndWrapper(ros::NodeHandle& nh){
@@ -10,8 +11,9 @@ namespace ROSNoetic{
         nh.param<std::string>("wrapper/config_file_name", config_file_name, "");
         nh.param<std::string>("wrapper/lidar_topic", lidar_topic, "/lidar");
         nh.param<std::string>("wrapper/imu_topic", imu_topic, "/imu");
-        std::cout<<"lidar_topic: "<<lidar_topic<<std::endl;
-        std::cout<<"imu_topic: "<<imu_topic<<std::endl;
+        ROS_INFO_STREAM("lidar_topic: " << lidar_topic);
+        ROS_INFO_STREAM("imu_topic: " << imu_topic);
+        ROS_INFO_STREAM("config_file_name: " << config_file_name);
 
         front_end_ptr = std::make_shared<IESKFSLAM::FrontEnd>(CONFIG_DIR + config_file_name, "front_end");
 
@@ -25,7 +27,7 @@ namespace ROSNoetic{
             lidar_process_ptr = std::make_shared<AVIAProcess>();
         }
         else{
-            std::cout<<"unsupport lidar type"<<std::endl;
+            ROS_ERROR_STREAM("unsupported lidar type: " << lidar_type);
             exit(100);
         }
 
@@ -36,6 +38,10 @@ namespace ROSNoetic{
     void IESKFFrontEndWrapper::lidarCloudMsgCallBack(const sensor_msgs::PointCloud2ConstPtr& msg){
         IESKFSLAM::PointCloud cloud;
         lidar_process_ptr->process(*msg, cloud);
+        ROS_DEBUG_STREAM_THROTTLE(1.0, "lidar callback stamp=" << msg->header.stamp.toSec()
+                                  << ", raw_width=" << msg->width
+                                  << ", raw_height=" << msg->height
+                                  << ", parsed_points=" << cloud.cloud_ptr->size());
         front_end_ptr->addPointCloud(cloud);
     }
     void IESKFFrontEndWrapper::imuMsgCallBack(const sensor_msgs::ImuConstPtr& msg){
@@ -43,6 +49,9 @@ namespace ROSNoetic{
         imu.acceleration << msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z;
         imu.gyroscope << msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z;
         imu.time_stamp.fromNSec(msg->header.stamp.toNSec());
+        ROS_DEBUG_STREAM_THROTTLE(1.0, "imu callback stamp=" << msg->header.stamp.toSec()
+                                  << ", acc=[" << imu.acceleration.transpose() << "]"
+                                  << ", gyro=[" << imu.gyroscope.transpose() << "]");
         front_end_ptr->addImu(imu);
     }
     void IESKFFrontEndWrapper::run(){
@@ -52,6 +61,8 @@ namespace ROSNoetic{
             ros::spinOnce();
             if(front_end_ptr->track()){
                 publishMsg();
+            } else {
+                ROS_DEBUG_THROTTLE(1.0, "front_end track() did not produce a publishable state");
             }
         }
     }
@@ -65,6 +76,16 @@ namespace ROSNoetic{
         pst.pose.position.z = X.position.z();
         path.poses.push_back(pst);
         path_publisher.publish(path);
+        IESKFSLAM::PCLPointCloud cloud = front_end_ptr->readCurrentPointCloud();
+        pcl::transformPointCloud(cloud,cloud,IESKFSLAM::compositeTransform(X.rotation,X.position).cast<float>());
+        // auto cloud =front_end_ptr->readCurrentPointCloud();
+        sensor_msgs::PointCloud2 msg;
+        pcl::toROSMsg(cloud,msg);
+        msg.header.frame_id = "map";
+        current_pointcloud_publisher.publish(msg);
+        ROS_DEBUG_STREAM_THROTTLE(1.0, "publish path_size=" << path.poses.size()
+                                  << ", cloud_size=" << cloud.size()
+                                  << ", position=[" << X.position.transpose() << "]");
     }
 
 }

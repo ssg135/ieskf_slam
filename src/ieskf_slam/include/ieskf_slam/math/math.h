@@ -2,7 +2,7 @@
 #include <Eigen/Dense>
 namespace IESKFSLAM
 {
-    Eigen::Matrix4d compositeTransform(const Eigen::Quaterniond & q,const Eigen::Vector3d & t){
+    inline Eigen::Matrix4d compositeTransform(const Eigen::Quaterniond & q,const Eigen::Vector3d & t){
         Eigen::Matrix4d ans;
         ans.setIdentity();
         ans.block<3,3>(0,0) = q.toRotationMatrix();
