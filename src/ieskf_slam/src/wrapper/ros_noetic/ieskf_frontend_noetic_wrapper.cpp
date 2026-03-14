@@ -20,6 +20,7 @@ namespace ROSNoetic{
         cloud_subscriber = nh.subscribe(lidar_topic, 100, &IESKFFrontEndWrapper::lidarCloudMsgCallBack, this);
         imu_subscriber = nh.subscribe(imu_topic, 100, &IESKFFrontEndWrapper::imuMsgCallBack, this);
         current_pointcloud_publisher = nh.advertise<sensor_msgs::PointCloud2>("curr_cloud", 100);
+        current_local_map_publisher = nh.advertise<sensor_msgs::PointCloud2>("local_map", 100);
         path_publisher = nh.advertise<nav_msgs::Path>("path", 100);
         int lidar_type = 0;
         nh.param<int>("wrapper/lidar_type", lidar_type, AVIA);
@@ -83,6 +84,10 @@ namespace ROSNoetic{
         pcl::toROSMsg(cloud,msg);
         msg.header.frame_id = "map";
         current_pointcloud_publisher.publish(msg);
+        cloud = front_end_ptr->readCurrentLocalMap();
+        pcl::toROSMsg(cloud,msg);
+        msg.header.frame_id = "map";
+        current_local_map_publisher.publish(msg);
         ROS_DEBUG_STREAM_THROTTLE(1.0, "publish path_size=" << path.poses.size()
                                   << ", cloud_size=" << cloud.size()
                                   << ", position=[" << X.position.transpose() << "]");

@@ -10,6 +10,8 @@ namespace IESKFSLAM{
         private:
             PCLPointCloudPtr local_map_ptr;
             KdTreePtr kdtree_ptr;
+            float map_side_length_2;
+            float map_resolution;
         public:
         using Ptr = std::shared_ptr<RectMapManager>;
             RectMapManager(const std::string&config_path,const std::string&prefix);

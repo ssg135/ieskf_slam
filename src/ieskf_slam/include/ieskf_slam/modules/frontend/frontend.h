@@ -39,6 +39,7 @@ namespace IESKFSLAM{
         void initState(MeasureGroup& mg);
         bool track();
         const PCLPointCloud& readCurrentPointCloud() const;
+        const PCLPointCloud& readCurrentLocalMap() const;
         const IESKF::State18& readState() const;
     };
 }

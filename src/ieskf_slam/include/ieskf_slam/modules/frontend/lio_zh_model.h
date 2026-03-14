@@ -7,6 +7,9 @@
 #include <memory>
 #include "ieskf_slam/math/geometry.h"
 #include "ieskf_slam/math/SO3.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 namespace IESKFSLAM {
     class LIOZHModel : public IESKF::calcZHInterface{
         private:
@@ -29,6 +32,12 @@ namespace IESKFSLAM {
             std::vector<LossType> loss_real;
             std::vector<bool> is_effect_points(current_point_ptr->size(), false);
             int vaild_points_num = 0;
+
+            #ifdef MP_EN
+                omp_set_num_threads(MP_PROC_NUM);
+                #pragma omp parallel for
+            #endif
+
             for (int i=0; i<current_point_ptr->size(); ++i) {
                 Point point_imu = current_point_ptr->points[i];
                 Point point_world = IESKFSLAM::transformPoint(point_imu, state.rotation, state.position); //取state计算imu->world
