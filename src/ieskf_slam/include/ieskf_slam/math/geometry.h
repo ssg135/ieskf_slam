@@ -3,8 +3,13 @@
 #include <vector>
 namespace IESKFSLAM
 {
+    struct PlaneCheckResult{
+        bool valid = false;
+        Eigen::Vector4d plane = Eigen::Vector4d::Zero();
+    };
+
     template< typename pointTypeT >
-    static bool planarCheck(const std::vector<pointTypeT> & points, Eigen::Vector4d &pabcd, float threhold){
+    inline PlaneCheckResult planarCheck(const std::vector<pointTypeT> & points, float threhold){
         Eigen::Vector3d normal_vector;
         Eigen::MatrixXd A;
         Eigen::VectorXd B;
@@ -26,21 +31,23 @@ namespace IESKFSLAM
         {
             if (fabs(normal_vector(0) * points[j].x + normal_vector(1) * points[j].y + normal_vector(2) * points[j].z + 1.0f) > threhold)
             {
-                return false;
+                return {};
             }
         }
         double normal = normal_vector.norm();
         normal_vector.normalize();
-        pabcd(0) = normal_vector(0);
-        pabcd(1) = normal_vector(1);
-        pabcd(2) = normal_vector(2);
-        pabcd(3) = 1/normal;
+        PlaneCheckResult result;
+        result.valid = true;
+        result.plane(0) = normal_vector(0);
+        result.plane(1) = normal_vector(1);
+        result.plane(2) = normal_vector(2);
+        result.plane(3) = 1/normal;
 
-        return true;
+        return result;
 
     }
     template<typename PointType,typename T>
-    static PointType transformPoint(PointType point,const Eigen::Quaternion<T> &q,const Eigen::Matrix<T,3,1> &t){
+    inline PointType transformPoint(PointType point,const Eigen::Quaternion<T> &q,const Eigen::Matrix<T,3,1> &t){
         Eigen::Matrix<T,3,1> ep = {point.x,point.y,point.z};
         ep = q*ep+t;
         point.x = ep.x();

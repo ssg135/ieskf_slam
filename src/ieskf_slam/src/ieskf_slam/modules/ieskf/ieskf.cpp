@@ -25,7 +25,7 @@ namespace IESKFSLAM{
                       << ", ba=" << cov_bias_acceleration;
     }
     IESKF::~IESKF(){}
-    void IESKF::predict(IMU &imu, double dt){
+    void IESKF::predict(IMU imu, double dt){
         imu.acceleration -= X.ba;
         imu.gyroscope -= X.bg;
         auto rotation = X.rotation.toRotationMatrix();
@@ -67,18 +67,28 @@ namespace IESKFSLAM{
             J_inv.setIdentity();
             J_inv.block<3,3>(0,0) = A_T(error_state.block<3,1>(0,0));
             P_in_update = J_inv * P *J_inv.transpose();
-            Eigen::MatrixXd z_k;
-            calc_zh_ptr->calculate(x_k_k,z_k,H_k);
+            const auto calc_result = calc_zh_ptr->calculate(x_k_k);
+            if(!calc_result.valid){
+                return false;
+            }
+            const Eigen::MatrixXd& z_k = calc_result.Z;
+            H_k = calc_result.H;
             Eigen::MatrixXd H_kt = H_k.transpose();
             K = (H_kt * H_k + (P_in_update / 0.001).inverse()).inverse() * H_kt;
             Eigen::Matrix<double,18,1> left  = -K*z_k;
             Eigen::Matrix<double,18,1> right = -(Eigen::Matrix<double,18,18>::Identity()-K*H_k)*J_inv*error_state;
             Eigen::Matrix<double,18,1> update_x = left +right;
+            LOG_EVERY_N(INFO, 20) << "IESKF update_x frame=" << (cnt_ + 1)
+                                  << ", iter=" << (i + 1)
+                                  << ", max_abs=" << update_x.cwiseAbs().maxCoeff()
+                                  << ", update_x=[" << update_x.transpose() << "]";
 
             converge = true;
-            // 检查更新量是否收敛（使用 Eigen 的高效方法）
-            if(update_x.cwiseAbs().maxCoeff() > 0.001){
-                converge = false;
+            for (int idx = 0; idx < 18; ++idx) {
+                if (std::abs(update_x(idx, 0)) > 0.001) {
+                    converge = false;
+                    break;
+                }
             }
             
             x_k_k.rotation = x_k_k.rotation.toRotationMatrix()*so3Exp(update_x.block<3,1>(0,0));

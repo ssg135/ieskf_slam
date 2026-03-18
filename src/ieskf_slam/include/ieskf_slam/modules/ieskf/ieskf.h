@@ -17,8 +17,15 @@ namespace IESKFSLAM{
                 Eigen::Vector3d ba = Eigen::Vector3d::Zero();
                 Eigen::Vector3d gravity = Eigen::Vector3d::Zero();
             };
+            struct CalcZHResult{
+                bool valid = false;
+                Eigen::MatrixXd Z;
+                Eigen::MatrixXd H;
+            };
             class calcZHInterface{
-                public: virtual bool calculate(const State18&X, Eigen::MatrixXd& Z, Eigen::MatrixXd& H) = 0;
+                public:
+                    virtual ~calcZHInterface() = default;
+                    virtual CalcZHResult calculate(const State18& X) const = 0;
             };
             std::shared_ptr<calcZHInterface> calc_zh_ptr;
         private:
@@ -29,7 +36,7 @@ namespace IESKFSLAM{
         public:
             IESKF(const std::string&config_path,const std::string&prefix);
             ~IESKF();
-            void predict(IMU& imu, double dt);
+            void predict(IMU imu, double dt);
             bool update();
             Eigen::Matrix<double,18,1> getErrorState(const State18& s1, const State18& s2) const; 
             const State18& getX();

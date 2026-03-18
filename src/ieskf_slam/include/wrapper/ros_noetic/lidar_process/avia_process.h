@@ -28,8 +28,9 @@ namespace ROSNoetic
     public:
         AVIAProcess(/* args */){}
         ~AVIAProcess(){}
-        bool process(const sensor_msgs::PointCloud2 &msg, IESKFSLAM::PointCloud &cloud){
+        IESKFSLAM::PointCloud process(const sensor_msgs::PointCloud2 &msg) const override{
             pcl::PointCloud<avia_ros::Point> avia_cloud;
+            IESKFSLAM::PointCloud cloud;
             pcl::fromROSMsg(msg,avia_cloud);
             cloud.cloud_ptr->clear();
             for (auto &&point : avia_cloud)
@@ -44,7 +45,7 @@ namespace ROSNoetic
                 cloud.cloud_ptr->push_back(p);
             }
             cloud.time_stamp.fromNSec(msg.header.stamp.toNSec());
-            return true;
+            return cloud;
         }
     };
 

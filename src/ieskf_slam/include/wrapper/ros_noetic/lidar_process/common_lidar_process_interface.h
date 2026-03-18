@@ -8,8 +8,9 @@ namespace ROSNoetic
     class CommonLidarProcessInterface
     {
     public:
+        virtual ~CommonLidarProcessInterface() = default;
+
         // 根据不同的lidar 转换成统一的cloud
-        virtual bool process(const sensor_msgs::PointCloud2 &msg, IESKFSLAM::PointCloud &cloud) = 0;
+        virtual IESKFSLAM::PointCloud process(const sensor_msgs::PointCloud2 &msg) const = 0;
     };
 } // namespace ROSNoetic
-

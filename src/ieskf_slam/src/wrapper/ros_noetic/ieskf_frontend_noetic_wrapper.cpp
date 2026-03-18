@@ -37,8 +37,7 @@ namespace ROSNoetic{
     IESKFFrontEndWrapper::~IESKFFrontEndWrapper(){}
 
     void IESKFFrontEndWrapper::lidarCloudMsgCallBack(const sensor_msgs::PointCloud2ConstPtr& msg){
-        IESKFSLAM::PointCloud cloud;
-        lidar_process_ptr->process(*msg, cloud);
+        IESKFSLAM::PointCloud cloud = lidar_process_ptr->process(*msg);
         ROS_DEBUG_STREAM_THROTTLE(1.0, "lidar callback stamp=" << msg->header.stamp.toSec()
                                   << ", raw_width=" << msg->width
                                   << ", raw_height=" << msg->height

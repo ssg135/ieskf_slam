@@ -31,12 +31,12 @@ namespace IESKFSLAM{
             size_t left {0};
             size_t right {local_map_ptr->size()-1};
             while(right > left){
-                while (right > left && (   local_map_ptr->points[right].x - pos_t.x()> map_side_length_2 
-                                        || local_map_ptr->points[right].y - pos_t.y()> map_side_length_2 
-                                        || local_map_ptr->points[right].z - pos_t.z()> map_side_length_2)) {--right;}
-                while (right > left && (   local_map_ptr->points[left].x - pos_t.x()< map_side_length_2 
-                                        || local_map_ptr->points[left].y - pos_t.y()< map_side_length_2 
-                                        || local_map_ptr->points[left].z - pos_t.z()< map_side_length_2)) {++left;}
+                while (right > left && (   std::abs(local_map_ptr->points[right].x - pos_t.x()) > map_side_length_2
+                                        || std::abs(local_map_ptr->points[right].y - pos_t.y()) > map_side_length_2
+                                        || std::abs(local_map_ptr->points[right].z - pos_t.z()) > map_side_length_2)) {--right;}
+                while (right > left && (   std::abs(local_map_ptr->points[left].x - pos_t.x()) < map_side_length_2
+                                        && std::abs(local_map_ptr->points[left].y - pos_t.y()) < map_side_length_2
+                                        && std::abs(local_map_ptr->points[left].z - pos_t.z()) < map_side_length_2)) {++left;}
                 std::swap(local_map_ptr->points[left], local_map_ptr->points[right]);      
             }
             local_map_ptr->resize(right+1);

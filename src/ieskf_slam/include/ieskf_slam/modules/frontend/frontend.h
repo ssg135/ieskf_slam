@@ -26,7 +26,6 @@ namespace IESKFSLAM{
         VoxelFilter voxel_filter;
         PCLPointCloudPtr filter_point_cloud_ptr;
         bool imu_inited =false;
-        double imu_scale = 1;
         Eigen::Quaterniond extrin_r;
         Eigen::Vector3d extrin_t;
         public:

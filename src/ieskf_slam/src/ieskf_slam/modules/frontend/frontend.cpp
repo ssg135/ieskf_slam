@@ -69,20 +69,26 @@ namespace IESKFSLAM{
                 SLAM_LOG_INFO << "FrontEnd IMU initialized with " << mg.imus.size() << " imu samples";
                 return false;
             }
-            // 对当前点云进行体素滤波
+            LOG_EVERY_N(INFO, 50) << "track synced lidar window [" << mg.lidar_begin_time
+                                  << ", " << mg.lidar_end_time << "], imu_count=" << mg.imus.size()
+                                  << ", raw_points=" << mg.point_cloud.cloud_ptr->size();
+            
+            const auto propagation = fbpropagate_ptr->forwardPropagate(mg, ieskf_ptr);
+            if (!propagation.valid) {
+                SLAM_LOG_WARN << "FrontbackPropagate forward propagation failed";
+                return false;
+            }
+            ieskf_ptr->setX(propagation.final_state);
+            fbpropagate_ptr->deskewPointCloud(mg.point_cloud, propagation.final_state, propagation.imu_poses);
             voxel_filter.setInputCloud(mg.point_cloud.cloud_ptr);
             voxel_filter.filter(*filter_point_cloud_ptr);
             if (filter_point_cloud_ptr->empty()) {
-                LOG_EVERY_N(WARNING, 20) << "Filtered point cloud is empty, raw cloud size="
+                LOG_EVERY_N(WARNING, 20) << "Filtered point cloud is empty after deskew, raw cloud size="
                                          << mg.point_cloud.cloud_ptr->size();
                 return false;
             }
-            LOG_EVERY_N(INFO, 50) << "track synced lidar window [" << mg.lidar_begin_time
-                                  << ", " << mg.lidar_end_time << "], imu_count=" << mg.imus.size()
-                                  << ", raw_points=" << mg.point_cloud.cloud_ptr->size()
+            LOG_EVERY_N(INFO, 50) << "deskewed_points=" << mg.point_cloud.cloud_ptr->size()
                                   << ", filtered_points=" << filter_point_cloud_ptr->size();
-            
-            fbpropagate_ptr->propagate(mg, ieskf_ptr);
             if (!ieskf_ptr->update()) {
                 SLAM_LOG_WARN << "IESKF update did not converge";
             }
@@ -162,13 +168,12 @@ namespace IESKFSLAM{
         auto x = ieskf_ptr->getX();
         x.bg = sum_gyro / double(mg.imus.size());
         Eigen::Vector3d mean_acc = sum_acc / double(mg.imus.size());
-        imu_scale = GRAVITY / mean_acc.norm();
+        const double acc_unit_scale = GRAVITY / mean_acc.norm();
         x.gravity = -mean_acc / mean_acc.norm() * GRAVITY;
-        fbpropagate_ptr->imu_scale = imu_scale;
-        fbpropagate_ptr->last_imu = mg.imus.back();
+        fbpropagate_ptr->initialize(mg.imus.back(), acc_unit_scale);
         ieskf_ptr->setX(x);
         imu_inited = true;
-        SLAM_LOG_INFO << "Initial state set. imu_scale=" << imu_scale
+        SLAM_LOG_INFO << "Initial state set. acc_unit_scale=" << acc_unit_scale
                       << ", bg=[" << x.bg.transpose() << "]"
                       << ", gravity=[" << x.gravity.transpose() << "]";
     }

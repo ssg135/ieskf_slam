@@ -7,7 +7,7 @@
 #include <memory>
 #include "ieskf_slam/math/geometry.h"
 #include "ieskf_slam/math/SO3.h"
-#ifdef _OPENMP
+#if defined(MP_EN) && defined(_OPENMP)
 #include <omp.h>
 #endif
 namespace IESKFSLAM {
@@ -26,14 +26,14 @@ namespace IESKFSLAM {
             this->local_map_ptr = local_map_ptr;
             this->global_map_kdtree_ptr = global_map_kdtree_ptr;
         }
-        bool calculate(const IESKF::State18& state, Eigen::MatrixXd& Z, Eigen::MatrixXd& H)override{
+        IESKF::CalcZHResult calculate(const IESKF::State18& state) const override{
             std::vector<LossType> loss_v;
             loss_v.resize(current_point_ptr->size());
             std::vector<LossType> loss_real;
             std::vector<bool> is_effect_points(current_point_ptr->size(), false);
             int vaild_points_num = 0;
 
-            #ifdef MP_EN
+            #if defined(MP_EN) && defined(_OPENMP)
                 omp_set_num_threads(MP_PROC_NUM);
                 #pragma omp parallel for
             #endif
@@ -51,8 +51,9 @@ namespace IESKFSLAM {
                 for(int ni = 0; ni<NEAR_POINT_NUM; ++ni){
                     planar_poionts.push_back(local_map_ptr->at(point_ind[ni]));
                 }
-                Eigen::Vector4d pabcd;
-                if(planarCheck(planar_poionts, pabcd, 0.1)){
+                const auto plane_result = planarCheck(planar_poionts, 0.1);
+                if(plane_result.valid){
+                    const Eigen::Vector4d& pabcd = plane_result.plane;
                     double pd = pabcd[0]*point_world.x + pabcd[1]*point_world.y + pabcd[2]*point_world.z + pabcd[3];
                     LossType loss;
                     loss.first = {point_imu.x, point_imu.y, point_imu.z};
@@ -72,18 +73,23 @@ namespace IESKFSLAM {
                     }
                 }
                 vaild_points_num = loss_real.size();
-                H = Eigen::MatrixXd::Zero(vaild_points_num, 18); 
-                Z.resize(vaild_points_num,1);
+                if(vaild_points_num == 0){
+                    return {};
+                }
+                IESKF::CalcZHResult result;
+                result.valid = true;
+                result.H = Eigen::MatrixXd::Zero(vaild_points_num, 18); 
+                result.Z.resize(vaild_points_num,1);
                 for (int vi = 0; vi < vaild_points_num; vi++)
                 {
                     // H 记录导数
                     Eigen::Vector3d dr = -1*loss_real[vi].second.transpose()*state.rotation.toRotationMatrix()*skewSymmetric(loss_real[vi].first);
-                    H.block<1,3>(vi,0) = dr.transpose();
-                    H.block<1,3>(vi,3) = loss_real[vi].second.transpose();
+                    result.H.block<1,3>(vi,0) = dr.transpose();
+                    result.H.block<1,3>(vi,3) = loss_real[vi].second.transpose();
                     // Z记录距离
-                    Z(vi,0) = loss_real[vi].third;
+                    result.Z(vi,0) = loss_real[vi].third;
                 }
-                return true;
+                return result;
             }
     };
 }
