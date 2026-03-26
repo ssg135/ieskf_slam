@@ -3,8 +3,10 @@
 #include "ieskf_slam/type/pointcloud.h"
 #include "ieskf_slam/math/math.h"
 #include <Eigen/src/Core/Matrix.h>
+#include <chrono>
 #include <memory>
 #include <pcl/common/transforms.h>
+#include <ieskf_slam/globaldefine.h>
 
 namespace IESKFSLAM{
     FrontEnd::FrontEnd(const std::string&config_path, const std::string&prefix):ModuleBase(config_path, prefix, "FrontEnd"){
@@ -26,6 +28,12 @@ namespace IESKFSLAM{
             extrin_r.w() = extrin_v[3];
         }
         readParam("extrin_t",extrin_v,std::vector<double>());
+        readParam("enable_record", enable_record, false);
+        readParam("record_file_name", record_file_name, std::string("default.txt"));
+        if (enable_record) {
+            record_file.open(RESULT_DIR + record_file_name, std::ios::out | std::ios::app);
+        }
+        print_table();
         if(extrin_v.size()==3){
             extrin_t<<extrin_v[0],extrin_v[1],extrin_v[2];
         }
@@ -40,7 +48,7 @@ namespace IESKFSLAM{
         filter_point_cloud_ptr = pcl::make_shared<PCLPointCloud>();
         lio_zh_model_ptr->prepare(filter_point_cloud_ptr, map_ptr->getLocalMap(), map_ptr->readKdtree());
     }
-    FrontEnd::~FrontEnd(){}
+    FrontEnd::~FrontEnd(){record_file.close();}
     void FrontEnd::addImu(const IMU& imu){
         imu_deque.push_back(imu);
     }
@@ -60,20 +68,26 @@ namespace IESKFSLAM{
         return *map_ptr->getLocalMap();
     }
     bool FrontEnd::track(){
+        const auto track_begin = std::chrono::steady_clock::now();
         MeasureGroup mg;
         if(syncMeasureGroup(mg)){
+            const auto sync_end = std::chrono::steady_clock::now();
             if (!imu_inited) {
                 map_ptr->reset();
                 map_ptr->addScan(mg.point_cloud.cloud_ptr, Eigen::Quaterniond::Identity(), Eigen::Vector3d::Zero());
                 initState(mg);
+                const auto init_end = std::chrono::steady_clock::now();
+                LOG_EVERY_N(WARNING, 20) << "track timing(init) total_ms="
+                                         << std::chrono::duration<double, std::milli>(init_end - track_begin).count()
+                                         << ", sync_ms="
+                                         << std::chrono::duration<double, std::milli>(sync_end - track_begin).count()
+                                         << ", init_ms="
+                                         << std::chrono::duration<double, std::milli>(init_end - sync_end).count();
                 SLAM_LOG_INFO << "FrontEnd IMU initialized with " << mg.imus.size() << " imu samples";
                 return false;
             }
-            LOG_EVERY_N(INFO, 50) << "track synced lidar window [" << mg.lidar_begin_time
-                                  << ", " << mg.lidar_end_time << "], imu_count=" << mg.imus.size()
-                                  << ", raw_points=" << mg.point_cloud.cloud_ptr->size();
-            
             const auto propagation = fbpropagate_ptr->forwardPropagate(mg, ieskf_ptr);
+            const auto propagation_end = std::chrono::steady_clock::now();
             if (!propagation.valid) {
                 SLAM_LOG_WARN << "FrontbackPropagate forward propagation failed";
                 return false;
@@ -82,32 +96,48 @@ namespace IESKFSLAM{
             fbpropagate_ptr->deskewPointCloud(mg.point_cloud, propagation.final_state, propagation.imu_poses);
             voxel_filter.setInputCloud(mg.point_cloud.cloud_ptr);
             voxel_filter.filter(*filter_point_cloud_ptr);
+            const auto filter_end = std::chrono::steady_clock::now();
             if (filter_point_cloud_ptr->empty()) {
                 LOG_EVERY_N(WARNING, 20) << "Filtered point cloud is empty after deskew, raw cloud size="
                                          << mg.point_cloud.cloud_ptr->size();
                 return false;
             }
-            LOG_EVERY_N(INFO, 50) << "deskewed_points=" << mg.point_cloud.cloud_ptr->size()
-                                  << ", filtered_points=" << filter_point_cloud_ptr->size();
             if (!ieskf_ptr->update()) {
                 SLAM_LOG_WARN << "IESKF update did not converge";
             }
+            const auto update_end = std::chrono::steady_clock::now();
             auto x = ieskf_ptr->getX();
+            if (enable_record) {
+                record_file << std::setprecision(15) << mg.lidar_end_time << " "
+                << x.position.x() << " " << x.position.y() << " "
+                << x.position.z() << " " << x.rotation.x() << " "
+                << x.rotation.y() << " " << x.rotation.z() << " "
+                << x.rotation.w() << std::endl;
+}
             map_ptr->addScan(filter_point_cloud_ptr,x.rotation,x.position);
-            LOG_EVERY_N(INFO, 50) << "track success position=[" << x.position.transpose()
-                                  << "], velocity=[" << x.velocity.transpose() << "]";
+            const auto map_end = std::chrono::steady_clock::now();
+            LOG_EVERY_N(WARNING, 20) << "track timing total_ms="
+                                     << std::chrono::duration<double, std::milli>(map_end - track_begin).count()
+                                     << ", sync_ms="
+                                     << std::chrono::duration<double, std::milli>(sync_end - track_begin).count()
+                                     << ", propagate_ms="
+                                     << std::chrono::duration<double, std::milli>(propagation_end - sync_end).count()
+                                     << ", deskew_filter_ms="
+                                     << std::chrono::duration<double, std::milli>(filter_end - propagation_end).count()
+                                     << ", update_ms="
+                                     << std::chrono::duration<double, std::milli>(update_end - filter_end).count()
+                                     << ", map_ms="
+                                     << std::chrono::duration<double, std::milli>(map_end - update_end).count()
+                                     << ", raw_points=" << mg.point_cloud.cloud_ptr->size()
+                                     << ", filtered_points=" << filter_point_cloud_ptr->size();
             return true;
         }
-        LOG_EVERY_N(INFO, 100) << "track waiting for synchronized lidar/imu data. imu_queue="
-                               << imu_deque.size() << ", cloud_queue=" << pointcloud_deque.size();
         return false;
     }
     bool FrontEnd::syncMeasureGroup(MeasureGroup& mg){
         mg.imus.clear();
         mg.point_cloud.cloud_ptr->clear();
         if(pointcloud_deque.empty() || imu_deque.empty()){
-            LOG_EVERY_N(INFO, 100) << "syncMeasureGroup waiting for data. imu_queue="
-                                   << imu_deque.size() << ", cloud_queue=" << pointcloud_deque.size();
             return false;
         }
         if(pointcloud_deque.front().cloud_ptr->empty()){
@@ -120,9 +150,6 @@ namespace IESKFSLAM{
         double imu_start_time = imu_deque.front().time_stamp.sec();
         double imu_end_time = imu_deque.back().time_stamp.sec();
         if(imu_end_time < cloud_end_time){
-            LOG_EVERY_N(INFO, 50) << "Waiting for newer imu data. imu_end_time=" << imu_end_time
-                                  << ", cloud_end_time=" << cloud_end_time
-                                  << ", imu_queue=" << imu_deque.size();
             return false;
         }
         if(cloud_end_time < imu_start_time){

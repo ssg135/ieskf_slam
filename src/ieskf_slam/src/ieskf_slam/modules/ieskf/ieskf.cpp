@@ -15,6 +15,7 @@ namespace IESKFSLAM{
         readParam("cov_acceleration", cov_acceleration, 0.1);
         readParam("cov_bias_gyroscope", cov_bias_gyroscope, 0.1);
         readParam("cov_bias_acceleration", cov_bias_acceleration, 0.1);
+        print_table();
         Q.block<3,3>(0,0).diagonal() = Eigen::Vector3d{cov_gyroscope,cov_gyroscope,cov_gyroscope};
         Q.block<3,3>(3,3).diagonal() = Eigen::Vector3d{cov_acceleration,cov_acceleration,cov_acceleration};
         Q.block<3,3>(6,6).diagonal() = Eigen::Vector3d{cov_bias_gyroscope,cov_bias_gyroscope,cov_bias_gyroscope};
@@ -78,10 +79,10 @@ namespace IESKFSLAM{
             Eigen::Matrix<double,18,1> left  = -K*z_k;
             Eigen::Matrix<double,18,1> right = -(Eigen::Matrix<double,18,18>::Identity()-K*H_k)*J_inv*error_state;
             Eigen::Matrix<double,18,1> update_x = left +right;
-            LOG_EVERY_N(INFO, 20) << "IESKF update_x frame=" << (cnt_ + 1)
-                                  << ", iter=" << (i + 1)
-                                  << ", max_abs=" << update_x.cwiseAbs().maxCoeff()
-                                  << ", update_x=[" << update_x.transpose() << "]";
+            VLOG_EVERY_N(1, 200) << "IESKF update_x frame=" << (cnt_ + 1)
+                                 << ", iter=" << (i + 1)
+                                 << ", max_abs=" << update_x.cwiseAbs().maxCoeff()
+                                 << ", update_x=[" << update_x.transpose() << "]";
 
             converge = true;
             for (int idx = 0; idx < 18; ++idx) {

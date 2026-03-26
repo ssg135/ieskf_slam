@@ -11,9 +11,9 @@ namespace ROSNoetic{
         nh.param<std::string>("wrapper/config_file_name", config_file_name, "");
         nh.param<std::string>("wrapper/lidar_topic", lidar_topic, "/lidar");
         nh.param<std::string>("wrapper/imu_topic", imu_topic, "/imu");
-        ROS_INFO_STREAM("lidar_topic: " << lidar_topic);
-        ROS_INFO_STREAM("imu_topic: " << imu_topic);
-        ROS_INFO_STREAM("config_file_name: " << config_file_name);
+        ROS_DEBUG_STREAM("lidar_topic: " << lidar_topic);
+        ROS_DEBUG_STREAM("imu_topic: " << imu_topic);
+        ROS_DEBUG_STREAM("config_file_name: " << config_file_name);
 
         front_end_ptr = std::make_shared<IESKFSLAM::FrontEnd>(CONFIG_DIR + config_file_name, "front_end");
 
@@ -26,6 +26,9 @@ namespace ROSNoetic{
         nh.param<int>("wrapper/lidar_type", lidar_type, AVIA);
         if(lidar_type == AVIA){
             lidar_process_ptr = std::make_shared<AVIAProcess>();
+        }
+        else if(lidar_type == VELO){
+            lidar_process_ptr = std::make_shared<VelodyneProcess>();
         }
         else{
             ROS_ERROR_STREAM("unsupported lidar type: " << lidar_type);

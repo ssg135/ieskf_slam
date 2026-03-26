@@ -2,6 +2,7 @@
 #include <string>
 #include <yaml-cpp/yaml.h>
 #include "ieskf_slam/common/logging.h"
+#include "ieskf_slam/common/colorfful_terminal.hpp"
 namespace IESKFSLAM
 {
     class ModuleBase
@@ -9,7 +10,7 @@ namespace IESKFSLAM
     private:
         YAML::Node config_node;
         std::string name;
-
+        std::shared_ptr<ctl::table_out> table_out_ptr;
     protected:
         /**
          * @param config_path: 配置文件目录
@@ -18,6 +19,7 @@ namespace IESKFSLAM
         */
         ModuleBase(const std::string&config_path,const std::string&prefix, const std::string & module_name = "default"){
             name = module_name;
+            table_out_ptr = std::make_shared<ctl::table_out>(module_name);
             if(config_path!=""){
                 try{
                     config_node = YAML::LoadFile(config_path);
@@ -51,7 +53,9 @@ namespace IESKFSLAM
                 val = default_val;
                 SLAM_LOG_WARN << "[" << name << "] param '" << key << "' missing, using default";
             }
+            table_out_ptr->add_item(key, VAR_NAME(val), val);
             //std::cout<<name: <<default_val<<std::endl;
         }
+        void print_table() { table_out_ptr->make_table_and_out();}
     };
 }

@@ -5,6 +5,7 @@
 #include "sensor_msgs/Imu.h"
 #include "nav_msgs/Odometry.h"
 #include "wrapper/ros_noetic/lidar_process/avia_process.h"
+#include "wrapper/ros_noetic/lidar_process/velodyne_process.h"
 #include <pcl_conversions/pcl_conversions.h>
 #include <Eigen/Dense>
 #include <tf/transform_broadcaster.h>
@@ -12,6 +13,7 @@
 namespace ROSNoetic{
     enum LIDAR_TYPE{
         AVIA = 0,
+        VELO = 1,
     };
     class IESKFFrontEndWrapper{
         private:

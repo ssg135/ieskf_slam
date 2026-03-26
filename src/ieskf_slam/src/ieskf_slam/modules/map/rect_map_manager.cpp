@@ -10,6 +10,7 @@ namespace IESKFSLAM{
         kdtree_ptr = pcl::make_shared<KdTree>();
         readParam<float>("map_side_length_2", map_side_length_2, 500);
         readParam<float>("map_resolution", map_resolution, 0.5);
+        print_table();
     }
     RectMapManager::~RectMapManager(){}
     void RectMapManager::addScan(const PCLPointCloudPtr curr_scan, const Eigen::Quaterniond &att_q, const Eigen::Vector3d pos_t){

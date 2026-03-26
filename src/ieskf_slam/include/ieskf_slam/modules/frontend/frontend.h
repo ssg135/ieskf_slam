@@ -1,5 +1,6 @@
 #pragma once
 #include <deque>
+#include <fstream>
 #include <memory>
 #include "ieskf_slam/type/imu.h"
 #include "ieskf_slam/type/pointcloud.h"
@@ -28,6 +29,9 @@ namespace IESKFSLAM{
         bool imu_inited =false;
         Eigen::Quaterniond extrin_r;
         Eigen::Vector3d extrin_t;
+        bool enable_record = false;
+        std::string record_file_name;
+        std::fstream record_file;
         public:
         FrontEnd(const std::string&config_path, const std::string&prefix);
         ~FrontEnd();
