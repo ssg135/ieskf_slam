@@ -25,7 +25,7 @@ namespace IESKFSLAM{
             class calcZHInterface{
                 public:
                     virtual ~calcZHInterface() = default;
-                    virtual CalcZHResult calculate(const State18& X) const = 0;
+                    virtual CalcZHResult calculate(const State18& X, bool need_rematch) const = 0;
             };
             std::shared_ptr<calcZHInterface> calc_zh_ptr;
         private:

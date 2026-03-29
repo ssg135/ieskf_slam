@@ -61,14 +61,18 @@ namespace IESKFSLAM{
         Eigen::MatrixXd H_k;
         bool converge = true;
         Eigen::Matrix<double, 18, 18> P_in_update;
-        int iter_times{10};
+        int iter_times{4};
+        bool need_rematch = true;
         for(int i =0; i<iter_times; ++i){
             auto error_state = getErrorState(x_k_k, X);
             Eigen::Matrix<double, 18, 18> J_inv;
             J_inv.setIdentity();
             J_inv.block<3,3>(0,0) = A_T(error_state.block<3,1>(0,0));
             P_in_update = J_inv * P *J_inv.transpose();
-            const auto calc_result = calc_zh_ptr->calculate(x_k_k);
+            auto calc_result = calc_zh_ptr->calculate(x_k_k, need_rematch);
+            if(!calc_result.valid && !need_rematch){
+                calc_result = calc_zh_ptr->calculate(x_k_k, true);
+            }
             if(!calc_result.valid){
                 return false;
             }
@@ -102,6 +106,7 @@ namespace IESKFSLAM{
             if(converge){
                 break;
             }
+            need_rematch = false;
         }
         X = x_k_k;
         P=(Eigen::Matrix<double,18,18>::Identity()-K*H_k)*P_in_update;

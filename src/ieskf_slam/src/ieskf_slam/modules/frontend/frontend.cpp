@@ -107,6 +107,7 @@ namespace IESKFSLAM{
                                          << mg.point_cloud.cloud_ptr->size();
                 return false;
             }
+            lio_zh_model_ptr->resetFrameCache();
             if (!ieskf_ptr->update()) {
                 SLAM_LOG_WARN << "IESKF update did not converge";
             }

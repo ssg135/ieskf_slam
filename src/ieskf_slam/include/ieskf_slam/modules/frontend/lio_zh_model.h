@@ -4,8 +4,10 @@
 #include "ieskf_slam/type/base_type.h"
 #include "ieskf_slam/modules/map/map_manager_base.h"
 #include <Eigen/src/Core/Matrix.h>
+#include <cstdint>
 #include <cmath>
 #include <memory>
+#include <vector>
 #include "ieskf_slam/math/geometry.h"
 #include "ieskf_slam/math/SO3.h"
 #if defined(MP_EN) && defined(_OPENMP)
@@ -19,13 +21,30 @@ namespace IESKFSLAM {
         using LossType = loss_type<Eigen::Vector3d, Eigen::Vector3d, double>;
         PCLPointCloudPtr current_point_ptr;
         MapManagerBase::ConstPtr map_manager_ptr;
+        mutable std::vector<std::vector<Point>> nearest_points_cache_;
+        mutable std::vector<std::uint8_t> nearest_points_valid_;
+
+        void ensureFrameCache(std::size_t point_count) const {
+            if (nearest_points_cache_.size() != point_count) {
+                nearest_points_cache_.assign(point_count, {});
+                nearest_points_valid_.assign(point_count, 0);
+            }
+        }
         public:
         using Ptr = std::shared_ptr<LIOZHModel>;
         void prepare(const PCLPointCloudPtr current_point_ptr, const MapManagerBase::ConstPtr& map_manager_ptr){
             this->current_point_ptr= current_point_ptr;
             this->map_manager_ptr = map_manager_ptr;
         }
-        IESKF::CalcZHResult calculate(const IESKF::State18& state) const override{
+        void resetFrameCache(){
+            nearest_points_cache_.clear();
+            nearest_points_valid_.clear();
+        }
+        IESKF::CalcZHResult calculate(const IESKF::State18& state, bool need_rematch) const override{
+            if (!current_point_ptr || !map_manager_ptr || current_point_ptr->empty()) {
+                return {};
+            }
+            ensureFrameCache(current_point_ptr->size());
             std::vector<LossType> loss_v;
             loss_v.resize(current_point_ptr->size());
             std::vector<LossType> loss_real;
@@ -40,17 +59,24 @@ namespace IESKFSLAM {
             for (int i=0; i<current_point_ptr->size(); ++i) {
                 Point point_imu = current_point_ptr->points[i];
                 Point point_world = IESKFSLAM::transformPoint(point_imu, state.rotation, state.position); //取state计算imu->world
-                std::vector<Point> nearest_points;
-                std::vector<float> distance;
-                if (!map_manager_ptr || !map_manager_ptr->nearestKSearch(point_world, NEAR_POINT_NUM, nearest_points, distance) ||
-                    nearest_points.size() < NEAR_POINT_NUM || distance[NEAR_POINT_NUM-1] > 5.0) {
+                const std::vector<Point>* nearest_points_ptr = nullptr;
+                if (need_rematch || !nearest_points_valid_[i]) {
+                    std::vector<Point> nearest_points;
+                    std::vector<float> distance;
+                    if (!map_manager_ptr->nearestKSearch(point_world, NEAR_POINT_NUM, nearest_points, distance) ||
+                        nearest_points.size() < NEAR_POINT_NUM || distance[NEAR_POINT_NUM-1] > 5.0) {
+                        nearest_points_valid_[i] = 0;
+                        nearest_points_cache_[i].clear();
+                        continue;
+                    }
+                    nearest_points_cache_[i] = std::move(nearest_points);
+                    nearest_points_valid_[i] = 1;
+                }
+                if (!nearest_points_valid_[i]) {
                     continue;
                 }
-                std::vector<Point> planar_poionts;
-                for(int ni = 0; ni<NEAR_POINT_NUM; ++ni){
-                    planar_poionts.push_back(nearest_points[ni]);
-                }
-                const auto plane_result = planarCheck(planar_poionts, 0.1);
+                nearest_points_ptr = &nearest_points_cache_[i];
+                const auto plane_result = planarCheck(*nearest_points_ptr, 0.1);
                 if(plane_result.valid){
                     const Eigen::Vector4d& pabcd = plane_result.plane;
                     double pd = pabcd[0]*point_world.x + pabcd[1]*point_world.y + pabcd[2]*point_world.z + pabcd[3];
