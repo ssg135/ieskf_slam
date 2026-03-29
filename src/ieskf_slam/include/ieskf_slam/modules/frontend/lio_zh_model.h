@@ -2,6 +2,7 @@
 #include "ieskf_slam/modules/ieskf/ieskf.h"
 #include "ieskf_slam/type/pointcloud.h"
 #include "ieskf_slam/type/base_type.h"
+#include "ieskf_slam/modules/map/map_manager_base.h"
 #include <Eigen/src/Core/Matrix.h>
 #include <cmath>
 #include <memory>
@@ -17,14 +18,12 @@ namespace IESKFSLAM {
         //1) point_imu 2)normal_vector 3)distance
         using LossType = loss_type<Eigen::Vector3d, Eigen::Vector3d, double>;
         PCLPointCloudPtr current_point_ptr;
-        PCLPointCloudConstPtr local_map_ptr;
-        KdTreeConstPtr global_map_kdtree_ptr;
+        MapManagerBase::ConstPtr map_manager_ptr;
         public:
         using Ptr = std::shared_ptr<LIOZHModel>;
-        void prepare(const PCLPointCloudPtr current_point_ptr, PCLPointCloudConstPtr local_map_ptr, KdTreeConstPtr global_map_kdtree_ptr){
+        void prepare(const PCLPointCloudPtr current_point_ptr, const MapManagerBase::ConstPtr& map_manager_ptr){
             this->current_point_ptr= current_point_ptr;
-            this->local_map_ptr = local_map_ptr;
-            this->global_map_kdtree_ptr = global_map_kdtree_ptr;
+            this->map_manager_ptr = map_manager_ptr;
         }
         IESKF::CalcZHResult calculate(const IESKF::State18& state) const override{
             std::vector<LossType> loss_v;
@@ -41,15 +40,15 @@ namespace IESKFSLAM {
             for (int i=0; i<current_point_ptr->size(); ++i) {
                 Point point_imu = current_point_ptr->points[i];
                 Point point_world = IESKFSLAM::transformPoint(point_imu, state.rotation, state.position); //取state计算imu->world
-                std::vector<int> point_ind;
+                std::vector<Point> nearest_points;
                 std::vector<float> distance;
-                global_map_kdtree_ptr->nearestKSearch(point_world, NEAR_POINT_NUM, point_ind, distance);
-                if (point_ind.size() < NEAR_POINT_NUM || distance[NEAR_POINT_NUM-1] > 5.0) {
+                if (!map_manager_ptr || !map_manager_ptr->nearestKSearch(point_world, NEAR_POINT_NUM, nearest_points, distance) ||
+                    nearest_points.size() < NEAR_POINT_NUM || distance[NEAR_POINT_NUM-1] > 5.0) {
                     continue;
                 }
                 std::vector<Point> planar_poionts;
                 for(int ni = 0; ni<NEAR_POINT_NUM; ++ni){
-                    planar_poionts.push_back(local_map_ptr->at(point_ind[ni]));
+                    planar_poionts.push_back(nearest_points[ni]);
                 }
                 const auto plane_result = planarCheck(planar_poionts, 0.1);
                 if(plane_result.valid){

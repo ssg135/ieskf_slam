@@ -9,6 +9,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <Eigen/Dense>
 #include <tf/transform_broadcaster.h>
+#include "ieskf_slam/CloudWithPose.h"
 
 namespace ROSNoetic{
     enum LIDAR_TYPE{
@@ -23,6 +24,7 @@ namespace ROSNoetic{
             ros::Publisher current_pointcloud_publisher;
             ros::Publisher current_local_map_publisher;
             ros::Publisher path_publisher;
+            ros::Publisher cloud_with_pose_publisher;
             std::shared_ptr<CommonLidarProcessInterface> lidar_process_ptr;
             
 

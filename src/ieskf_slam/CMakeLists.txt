@@ -26,19 +26,32 @@ add_compile_options(
 
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
+  message_generation
   roscpp
   rospy
   std_msgs
   sensor_msgs
+  geometry_msgs
   nav_msgs
   pcl_conversions
   tf
+)
+add_message_files(
+  FILES
+  CloudWithPose.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  sensor_msgs
+  geometry_msgs
 )
 
 ## 查找系统依赖：PCL、Eigen3、yaml-cpp
 find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLOG REQUIRED libglog)
 
@@ -130,7 +143,7 @@ pkg_check_modules(GLOG REQUIRED libglog)
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp rospy std_msgs sensor_msgs nav_msgs pcl_conversions tf
+  CATKIN_DEPENDS message_runtime roscpp rospy std_msgs sensor_msgs geometry_msgs nav_msgs pcl_conversions tf
   DEPENDS PCL EIGEN3
 )
 
@@ -159,12 +172,26 @@ add_library(ieskf_slam_lib
   src/ieskf_slam/modules/frontend/frontend.cpp
   src/ieskf_slam/modules/ieskf/ieskf.cpp
   src/ieskf_slam/modules/map/rect_map_manager.cpp
+  src/ieskf_slam/modules/map/map_manager_factory.cpp
+  src/ieskf_slam/modules/map/ikdtree_map_manager.cpp
   src/ieskf_slam/modules/frontbackPropagate/frontback_propagate.cpp
+  src/ieskf_slam/modules/backend/keyframe_store.cpp
+  src/ieskf_slam/modules/backend/scan_context_loop_detector.cpp
+  src/ieskf_slam/modules/backend/icp_loop_registrar.cpp
+  src/ieskf_slam/modules/backend/simple_pose_graph_optimizer.cpp
+  src/ieskf_slam/modules/backend/backend_coordinator.cpp
+  include/ieskf_slam/common/scan_context/Scancontext.cpp
+  include/ieskf_slam/third_party/ikd_tree/ikd_Tree.cpp
+)
+add_dependencies(ieskf_slam_lib
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
 )
 target_link_libraries(ieskf_slam_lib
   ${PCL_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
   ${GLOG_LIBRARIES}
+  Threads::Threads
 )
 
 ## ============================================
@@ -173,6 +200,11 @@ target_link_libraries(ieskf_slam_lib
 ## 包含 IESKFFrontEndWrapper 等 ROS 封装层的实现
 add_library(ieskf_wrapper_lib
   src/wrapper/ros_noetic/ieskf_frontend_noetic_wrapper.cpp
+  src/wrapper/ros_noetic/ieskf_backend_noetic_wrapper.cpp
+)
+add_dependencies(ieskf_wrapper_lib
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
 )
 target_link_libraries(ieskf_wrapper_lib
   ieskf_slam_lib
@@ -192,6 +224,21 @@ add_dependencies(ieskf_frontend_node
   ${catkin_EXPORTED_TARGETS}
 )
 target_link_libraries(ieskf_frontend_node
+  ieskf_wrapper_lib
+  ieskf_slam_lib
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${GLOG_LIBRARIES}
+)
+
+add_executable(ieskf_backend_node
+  src/app/ieskf_backend_node.cpp
+)
+add_dependencies(ieskf_backend_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(ieskf_backend_node
   ieskf_wrapper_lib
   ieskf_slam_lib
   ${catkin_LIBRARIES}

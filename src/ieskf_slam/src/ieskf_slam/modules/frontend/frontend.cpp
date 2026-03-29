@@ -1,5 +1,6 @@
 #include "ieskf_slam/modules/frontend/frontend.h"
 #include "ieskf_slam/common/logging.h"
+#include "ieskf_slam/modules/map/map_manager_base.h"
 #include "ieskf_slam/type/pointcloud.h"
 #include "ieskf_slam/math/math.h"
 #include <Eigen/src/Core/Matrix.h>
@@ -41,12 +42,12 @@ namespace IESKFSLAM{
                       << ", extrin_r_param_size=" << extrin_v.size()
                       << ", extrin_t=[" << extrin_t.transpose() << "]";
         ieskf_ptr = std::make_shared<IESKF>(config_path, "ieskf");
-        map_ptr = std::make_shared<RectMapManager>(config_path, "map");
+        map_ptr = CreateMapManager(config_path, "map");
         fbpropagate_ptr = std::make_shared<FrontbackPropagate>();
         lio_zh_model_ptr = std::make_shared<LIOZHModel>();
         ieskf_ptr->calc_zh_ptr = lio_zh_model_ptr;
         filter_point_cloud_ptr = pcl::make_shared<PCLPointCloud>();
-        lio_zh_model_ptr->prepare(filter_point_cloud_ptr, map_ptr->getLocalMap(), map_ptr->readKdtree());
+        lio_zh_model_ptr->prepare(filter_point_cloud_ptr, map_ptr);
     }
     FrontEnd::~FrontEnd(){record_file.close();}
     void FrontEnd::addImu(const IMU& imu){
@@ -66,6 +67,9 @@ namespace IESKFSLAM{
     }
     const PCLPointCloud& FrontEnd::readCurrentLocalMap() const{
         return *map_ptr->getLocalMap();
+    }
+    const PCLPointCloud& FrontEnd::readFullPointCloud() const{
+        return *full_point_cloud_ptr;
     }
     bool FrontEnd::track(){
         const auto track_begin = std::chrono::steady_clock::now();
@@ -88,6 +92,7 @@ namespace IESKFSLAM{
             }
             const auto propagation = fbpropagate_ptr->forwardPropagate(mg, ieskf_ptr);
             const auto propagation_end = std::chrono::steady_clock::now();
+            full_point_cloud_ptr = mg.point_cloud.cloud_ptr;
             if (!propagation.valid) {
                 SLAM_LOG_WARN << "FrontbackPropagate forward propagation failed";
                 return false;

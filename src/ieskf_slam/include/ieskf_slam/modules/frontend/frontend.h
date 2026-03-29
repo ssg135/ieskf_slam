@@ -9,7 +9,7 @@
 #include "ieskf_slam/modules/module_base.h"
 #include "ieskf_slam/type/measure_group.h"
 #include "ieskf_slam/modules/ieskf/ieskf.h"
-#include "ieskf_slam/modules/map/rect_map_manager.h"
+#include "ieskf_slam/modules/map/map_manager_base.h"
 #include "ieskf_slam/modules/frontbackPropagate/frontback_propagate.h"
 #include "ieskf_slam/modules/frontend/lio_zh_model.h"
 
@@ -21,11 +21,12 @@ namespace IESKFSLAM{
         std::deque<PointCloud> pointcloud_deque;
         std::deque<Pose> pose_deque;
         IESKF::Ptr ieskf_ptr;
-        RectMapManager::Ptr map_ptr;
+        MapManagerBase::Ptr map_ptr;
         FrontbackPropagate::Ptr fbpropagate_ptr;
         LIOZHModel::Ptr lio_zh_model_ptr;
         VoxelFilter voxel_filter;
         PCLPointCloudPtr filter_point_cloud_ptr;
+        PCLPointCloudPtr full_point_cloud_ptr;
         bool imu_inited =false;
         Eigen::Quaterniond extrin_r;
         Eigen::Vector3d extrin_t;
@@ -43,6 +44,7 @@ namespace IESKFSLAM{
         bool track();
         const PCLPointCloud& readCurrentPointCloud() const;
         const PCLPointCloud& readCurrentLocalMap() const;
+        const PCLPointCloud& readFullPointCloud() const;
         const IESKF::State18& readState() const;
     };
 }
