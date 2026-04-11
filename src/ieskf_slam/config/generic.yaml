@@ -1,0 +1,61 @@
+wrapper:
+  config_file_name: generic.yaml
+  lidar_topic: /lidar_points
+  imu_topic: /A000/imu
+  lidar_type: 2 # 0) avia 1) velodyne 2) generic sensor_msgs/PointCloud2
+
+map:
+  type: ikdtree #rect_kdtree ikdtree
+  map_side_length_2: 500
+  map_resolution: 0.5
+  ikdtree_delete_criterion: 0.5
+  ikdtree_balance_criterion: 0.7
+  ikdtree_downsample_size: 0.5
+
+front_end:
+  extrin_r: [1,0,0,
+            0,1,0,
+            0,0,1]
+  extrin_t: [-0.27255, 0.00053,-0.17954]
+  enable_record: false
+  record_file_name: m2dgr_street05.txt
+ieskf:
+  cov_gyroscope: 0.1
+  cov_acceleration: 0.1
+  cov_bias_acceleration: 0.0001
+  cov_bias_gyroscope: 0.0001
+
+back_end:
+  optimized_map_publish_hz: 1.0
+  enable_record_raw: true
+  raw_record_file_name: backend_raw_keyframes.txt
+  enable_record_optimized: true
+  optimized_record_file_name: backend_optimized_keyframes.txt
+  enable_save_dense_map: true
+  dense_map_file_name: optimized_map_dense.pcd
+  dense_map_keyframe_voxel_leaf_size: 0.3
+  dense_map_global_voxel_leaf_size: 0.3
+  loop_submap_voxel_leaf_size: 0.5
+  loop_submap_num_keyframes_each_side: 10
+  map_visualization_radius: 30.0
+  map_visualization_min_recent_keyframes: 20
+  map_visualization_max_keyframes: 80
+  keyframe_translation_thresh: 1.0
+  keyframe_rotation_thresh_deg: 10.0
+  force_keyframe_every_n: 30
+  keyframe_voxel_leaf_size: 0.5
+  map_voxel_leaf_size: 0.5
+  odom_translation_information: 100.0
+  odom_rotation_information: 150.0
+  scan_context_distance_threshold: 0.18
+  loop_candidate_max_yaw_diff_deg_from_odom: 35.0
+  loop_max_translation_delta_from_guess: 3.0
+  loop_max_rotation_delta_deg_from_guess: 20.0
+  icp_max_iterations: 30
+  icp_max_correspondence_distance: 6.0
+  icp_fitness_threshold: 0.8
+  loop_translation_information: 30.0
+  loop_rotation_information: 50.0
+  optimizer_max_iterations: 15
+  optimizer_stop_delta_norm: 0.0001
+  optimizer_damping_lambda: 0.000001

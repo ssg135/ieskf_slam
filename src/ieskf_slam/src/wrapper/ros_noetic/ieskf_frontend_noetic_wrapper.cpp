@@ -31,6 +31,9 @@ namespace ROSNoetic{
         else if(lidar_type == VELO){
             lidar_process_ptr = std::make_shared<VelodyneProcess>();
         }
+        else if(lidar_type == GENERIC_POINTCLOUD2){
+            lidar_process_ptr = std::make_shared<GenericPointCloud2Process>();
+        }
         else{
             ROS_ERROR_STREAM("unsupported lidar type: " << lidar_type);
             exit(100);
