@@ -16,6 +16,10 @@ pcl::PointCloud<SCPointType> ScanContextLoopDetector::toScanContextCloud(const P
     return scan_context_cloud;
 }
 
+void ScanContextLoopDetector::setDistanceThreshold(double distance_threshold) {
+    sc_manager_.setLoopThreshold(distance_threshold);
+}
+
 void ScanContextLoopDetector::addKeyframe(const Keyframe& keyframe) {
     auto scan_context_cloud = toScanContextCloud(keyframe.downsampled_cloud);
     sc_manager_.makeAndSaveScancontextAndKeys(scan_context_cloud);

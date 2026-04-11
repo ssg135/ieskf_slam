@@ -52,8 +52,68 @@ find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Threads REQUIRED)
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLOG REQUIRED libglog)
+find_package(Ceres QUIET)
+if (Ceres_FOUND)
+  set(CERES_LIBRARIES Ceres::ceres)
+else()
+  find_path(CERES_INCLUDE_DIRS ceres/ceres.h
+    PATHS /usr/local/include /usr/include
+  )
+  find_library(CERES_LIBRARY NAMES ceres
+    PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu
+  )
+  find_library(SUITESPARSE_CONFIG_LIBRARY NAMES suitesparseconfig
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(CHOLMOD_LIBRARY NAMES cholmod
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(SPQR_LIBRARY NAMES spqr
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(CXSPARSE_LIBRARY NAMES cxsparse
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(AMD_LIBRARY NAMES amd
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(CAMD_LIBRARY NAMES camd
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(COLAMD_LIBRARY NAMES colamd
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(CCOLAMD_LIBRARY NAMES ccolamd
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  find_library(METIS_LIBRARY NAMES metis
+    PATHS /lib /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu
+  )
+  if (NOT CERES_INCLUDE_DIRS OR NOT CERES_LIBRARY OR NOT SUITESPARSE_CONFIG_LIBRARY OR
+      NOT CHOLMOD_LIBRARY OR NOT SPQR_LIBRARY OR NOT CXSPARSE_LIBRARY OR
+      NOT AMD_LIBRARY OR NOT CAMD_LIBRARY OR NOT COLAMD_LIBRARY OR NOT CCOLAMD_LIBRARY)
+    message(FATAL_ERROR "Ceres Solver not found. Install libceres-dev or provide a CeresConfig.cmake.")
+  endif()
+  set(CERES_LIBRARIES
+    ${CERES_LIBRARY}
+    ${SPQR_LIBRARY}
+    ${CHOLMOD_LIBRARY}
+    ${CXSPARSE_LIBRARY}
+    ${AMD_LIBRARY}
+    ${CAMD_LIBRARY}
+    ${COLAMD_LIBRARY}
+    ${CCOLAMD_LIBRARY}
+    ${SUITESPARSE_CONFIG_LIBRARY}
+  )
+  if (METIS_LIBRARY)
+    list(APPEND CERES_LIBRARIES ${METIS_LIBRARY})
+  endif()
+  list(APPEND CERES_LIBRARIES ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+endif()
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -159,6 +219,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
   ${YAML_CPP_INCLUDE_DIR}
   ${GLOG_INCLUDE_DIRS}
+  ${CERES_INCLUDE_DIRS}
 )
 
 ## 定义 PROJ_DIR 宏，使 globaldefine.h 中的 PROJ_DIR 指向包的实际路径
@@ -178,7 +239,7 @@ add_library(ieskf_slam_lib
   src/ieskf_slam/modules/backend/keyframe_store.cpp
   src/ieskf_slam/modules/backend/scan_context_loop_detector.cpp
   src/ieskf_slam/modules/backend/icp_loop_registrar.cpp
-  src/ieskf_slam/modules/backend/simple_pose_graph_optimizer.cpp
+  src/ieskf_slam/modules/backend/ceres_pose_graph_optimizer.cpp
   src/ieskf_slam/modules/backend/backend_coordinator.cpp
   include/ieskf_slam/common/scan_context/Scancontext.cpp
   include/ieskf_slam/third_party/ikd_tree/ikd_Tree.cpp
@@ -191,6 +252,7 @@ target_link_libraries(ieskf_slam_lib
   ${PCL_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
   ${GLOG_LIBRARIES}
+  ${CERES_LIBRARIES}
   Threads::Threads
 )
 

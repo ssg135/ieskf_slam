@@ -1,5 +1,6 @@
 #include "ieskf_slam/modules/backend/backend_coordinator.h"
 #include "ieskf_slam/modules/backend/backend_utils.h"
+#include <algorithm>
 #include <cmath>
 #include <pcl/common/transforms.h>
 
@@ -7,7 +8,8 @@ namespace IESKFSLAM {
 
 BackendCoordinator::BackendCoordinator(const std::string& config_path, const std::string& prefix)
     : ModuleBase(config_path, prefix, "BackEnd"),
-      loop_registrar_(20, 15.0, 1.5, 30.0, 50.0),
+      loop_registrar_(20, 6.0, 0.8, 30.0, 50.0, 35.0 * M_PI / 180.0, 3.0,
+                      20.0 * M_PI / 180.0),
       pose_graph_optimizer_(15, 1e-4, 1e-6) {
     double keyframe_rotation_thresh_deg = 10.0;
     readParam("keyframe_translation_thresh", keyframe_translation_thresh_, 1.0);
@@ -15,22 +17,44 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
     readParam("force_keyframe_every_n", force_keyframe_every_n_, 30);
     readParam("keyframe_voxel_leaf_size", keyframe_voxel_leaf_size_, 0.5);
     readParam("map_voxel_leaf_size", map_voxel_leaf_size_, 0.5);
+    readParam("dense_map_keyframe_voxel_leaf_size", dense_map_keyframe_voxel_leaf_size_, 0.3);
+    readParam("dense_map_global_voxel_leaf_size", dense_map_global_voxel_leaf_size_, 0.3);
+    readParam("loop_submap_voxel_leaf_size", loop_submap_voxel_leaf_size_, 0.5);
+    readParam("map_visualization_radius", map_visualization_radius_, 30.0);
+    readParam("map_visualization_min_recent_keyframes", map_visualization_min_recent_keyframes_, 20);
+    readParam("map_visualization_max_keyframes", map_visualization_max_keyframes_, 80);
+    readParam("loop_submap_num_keyframes_each_side", loop_submap_num_keyframes_each_side_, 10);
     readParam("odom_translation_information", odom_translation_information_, 100.0);
     readParam("odom_rotation_information", odom_rotation_information_, 150.0);
+    double scan_context_distance_threshold = 0.18;
+    double loop_candidate_max_yaw_diff_deg_from_odom = 35.0;
+    double loop_max_translation_delta_from_guess = 3.0;
+    double loop_max_rotation_delta_deg_from_guess = 20.0;
+    readParam("scan_context_distance_threshold", scan_context_distance_threshold, 0.18);
+    readParam("loop_candidate_max_yaw_diff_deg_from_odom",
+              loop_candidate_max_yaw_diff_deg_from_odom, 35.0);
+    readParam("loop_max_translation_delta_from_guess",
+              loop_max_translation_delta_from_guess, 3.0);
+    readParam("loop_max_rotation_delta_deg_from_guess",
+              loop_max_rotation_delta_deg_from_guess, 20.0);
 
     int icp_max_iterations = 30;
-    double icp_max_correspondence_distance = 15.0;
-    double icp_fitness_threshold = 1.5;
+    double icp_max_correspondence_distance = 6.0;
+    double icp_fitness_threshold = 0.8;
     double loop_translation_information = 30.0;
     double loop_rotation_information = 50.0;
     readParam("icp_max_iterations", icp_max_iterations, 30);
-    readParam("icp_max_correspondence_distance", icp_max_correspondence_distance, 15.0);
-    readParam("icp_fitness_threshold", icp_fitness_threshold, 1.5);
+    readParam("icp_max_correspondence_distance", icp_max_correspondence_distance, 6.0);
+    readParam("icp_fitness_threshold", icp_fitness_threshold, 0.8);
     readParam("loop_translation_information", loop_translation_information, 30.0);
     readParam("loop_rotation_information", loop_rotation_information, 50.0);
     loop_registrar_ = ICPLoopRegistrar(icp_max_iterations, icp_max_correspondence_distance,
                                        icp_fitness_threshold, loop_translation_information,
-                                       loop_rotation_information);
+                                       loop_rotation_information,
+                                       loop_candidate_max_yaw_diff_deg_from_odom * M_PI / 180.0,
+                                       loop_max_translation_delta_from_guess,
+                                       loop_max_rotation_delta_deg_from_guess * M_PI / 180.0);
+    loop_detector_.setDistanceThreshold(scan_context_distance_threshold);
 
     int optimizer_max_iterations = 15;
     double optimizer_stop_delta_norm = 1e-4;
@@ -38,14 +62,26 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
     readParam("optimizer_max_iterations", optimizer_max_iterations, 15);
     readParam("optimizer_stop_delta_norm", optimizer_stop_delta_norm, 1e-4);
     readParam("optimizer_damping_lambda", optimizer_damping_lambda, 1e-6);
-    pose_graph_optimizer_ = SimplePoseGraphOptimizer(optimizer_max_iterations,
-                                                     optimizer_stop_delta_norm,
-                                                     optimizer_damping_lambda);
+    pose_graph_optimizer_ = CeresPoseGraphOptimizer(optimizer_max_iterations,
+                                                    optimizer_stop_delta_norm,
+                                                    optimizer_damping_lambda);
 
     keyframe_rotation_thresh_rad_ = keyframe_rotation_thresh_deg * M_PI / 180.0;
+    loop_submap_num_keyframes_each_side_ = std::max(loop_submap_num_keyframes_each_side_, 0);
+    map_visualization_min_recent_keyframes_ = std::max(map_visualization_min_recent_keyframes_, 1);
+    if (map_visualization_max_keyframes_ > 0) {
+        map_visualization_max_keyframes_ =
+            std::max(map_visualization_max_keyframes_, map_visualization_min_recent_keyframes_);
+    }
     keyframe_voxel_filter_.setLeafSize(keyframe_voxel_leaf_size_, keyframe_voxel_leaf_size_,
                                        keyframe_voxel_leaf_size_);
     map_voxel_filter_.setLeafSize(map_voxel_leaf_size_, map_voxel_leaf_size_, map_voxel_leaf_size_);
+    dense_map_keyframe_voxel_filter_.setLeafSize(dense_map_keyframe_voxel_leaf_size_,
+                                                 dense_map_keyframe_voxel_leaf_size_,
+                                                 dense_map_keyframe_voxel_leaf_size_);
+    dense_map_global_voxel_filter_.setLeafSize(dense_map_global_voxel_leaf_size_,
+                                               dense_map_global_voxel_leaf_size_,
+                                               dense_map_global_voxel_leaf_size_);
     print_table();
 }
 
@@ -102,6 +138,52 @@ GraphEdge BackendCoordinator::makeOdometryEdge(const Keyframe& previous_keyframe
     return edge;
 }
 
+Keyframe BackendCoordinator::buildLoopSubmapKeyframe(int target_keyframe_id) const {
+    const Keyframe& target_keyframe = keyframe_store_.get(target_keyframe_id);
+
+    Keyframe submap_keyframe;
+    submap_keyframe.id = target_keyframe.id;
+    submap_keyframe.stamp_sec = target_keyframe.stamp_sec;
+    submap_keyframe.raw_pose = target_keyframe.raw_pose;
+    submap_keyframe.optimized_pose = target_keyframe.optimized_pose;
+
+    const auto& keyframes = keyframe_store_.all();
+    const int first_index = std::max(0, target_keyframe_id - loop_submap_num_keyframes_each_side_);
+    const int last_index = std::min(static_cast<int>(keyframes.size()) - 1,
+                                    target_keyframe_id + loop_submap_num_keyframes_each_side_);
+    for (int index = first_index; index <= last_index; ++index) {
+        PCLPointCloud transformed_cloud = keyframes[index].downsampled_cloud;
+        if (transformed_cloud.empty()) {
+            continue;
+        }
+
+        pcl::transformPointCloud(
+            transformed_cloud, transformed_cloud,
+            poseToIsometry(relativePose(target_keyframe.optimized_pose, keyframes[index].optimized_pose))
+                .matrix()
+                .cast<float>());
+        submap_keyframe.downsampled_cloud += transformed_cloud;
+    }
+
+    if (submap_keyframe.downsampled_cloud.empty()) {
+        submap_keyframe.downsampled_cloud = target_keyframe.downsampled_cloud;
+        return submap_keyframe;
+    }
+
+    if (loop_submap_voxel_leaf_size_ > 0.0) {
+        VoxelFilter voxel_filter = map_voxel_filter_;
+        voxel_filter.setLeafSize(loop_submap_voxel_leaf_size_, loop_submap_voxel_leaf_size_,
+                                 loop_submap_voxel_leaf_size_);
+        voxel_filter.setInputCloud(submap_keyframe.downsampled_cloud.makeShared());
+
+        PCLPointCloud filtered_submap;
+        voxel_filter.filter(filtered_submap);
+        submap_keyframe.downsampled_cloud = std::move(filtered_submap);
+    }
+
+    return submap_keyframe;
+}
+
 BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud, const Pose& raw_pose,
                                                       double stamp_sec) {
     BackendProcessResult result;
@@ -129,8 +211,9 @@ BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud
     if (candidate.valid) {
         result.found_loop_candidate = true;
         result.loop_target_id = candidate.target_id;
+        const Keyframe target_submap_keyframe = buildLoopSubmapKeyframe(candidate.target_id);
         const LoopConstraint loop_constraint = loop_registrar_.registerLoop(
-            current_keyframe, keyframe_store_.get(candidate.target_id), candidate);
+            current_keyframe, target_submap_keyframe, candidate);
         if (loop_constraint.valid) {
             GraphEdge loop_edge;
             loop_edge.from_id = loop_constraint.from_id;
@@ -163,9 +246,55 @@ std::vector<Pose> BackendCoordinator::readOptimizedPoses() const {
     return poses;
 }
 
+std::vector<Pose> BackendCoordinator::readRawPoses() const {
+    std::vector<Pose> poses;
+    poses.reserve(keyframe_store_.size());
+    for (const auto& keyframe : keyframe_store_.all()) {
+        poses.push_back(keyframe.raw_pose);
+    }
+    return poses;
+}
+
 PCLPointCloud BackendCoordinator::buildOptimizedMap() const {
     PCLPointCloud aggregated_map;
-    for (const auto& keyframe : keyframe_store_.all()) {
+    const auto& keyframes = keyframe_store_.all();
+    if (keyframes.empty()) {
+        return aggregated_map;
+    }
+
+    const Pose& latest_pose = keyframes.back().optimized_pose;
+    const std::size_t keyframe_count = keyframes.size();
+    const std::size_t recent_window =
+        static_cast<std::size_t>(std::max(map_visualization_min_recent_keyframes_, 1));
+    const std::size_t first_recent_index =
+        keyframe_count > recent_window ? keyframe_count - recent_window : 0;
+
+    std::vector<std::size_t> selected_indices;
+    selected_indices.reserve(keyframe_count);
+    for (std::size_t i = 0; i < keyframe_count; ++i) {
+        const auto& keyframe = keyframes[i];
+        const bool is_recent = i >= first_recent_index;
+        const bool is_nearby =
+            map_visualization_radius_ <= 0.0 ||
+            (keyframe.optimized_pose.position - latest_pose.position).norm() <= map_visualization_radius_;
+        if (is_recent || is_nearby) {
+            selected_indices.push_back(i);
+        }
+    }
+
+    if (selected_indices.empty()) {
+        selected_indices.push_back(keyframe_count - 1);
+    }
+
+    if (map_visualization_max_keyframes_ > 0 &&
+        selected_indices.size() > static_cast<std::size_t>(map_visualization_max_keyframes_)) {
+        const std::size_t erase_count =
+            selected_indices.size() - static_cast<std::size_t>(map_visualization_max_keyframes_);
+        selected_indices.erase(selected_indices.begin(), selected_indices.begin() + erase_count);
+    }
+
+    for (const std::size_t index : selected_indices) {
+        const auto& keyframe = keyframes[index];
         PCLPointCloud transformed_cloud = keyframe.downsampled_cloud;
         pcl::transformPointCloud(transformed_cloud, transformed_cloud,
                                  poseToIsometry(keyframe.optimized_pose).matrix().cast<float>());
@@ -181,6 +310,40 @@ PCLPointCloud BackendCoordinator::buildOptimizedMap() const {
     voxel_filter.setInputCloud(aggregated_map.makeShared());
     voxel_filter.filter(filtered_map);
     return filtered_map;
+}
+
+PCLPointCloud BackendCoordinator::buildDenseOptimizedMap() const {
+    PCLPointCloud dense_map;
+    const auto& keyframes = keyframe_store_.all();
+    if (keyframes.empty()) {
+        return dense_map;
+    }
+
+    for (const auto& keyframe : keyframes) {
+        PCLPointCloud filtered_keyframe_cloud = keyframe.cloud;
+        if (!filtered_keyframe_cloud.empty() && dense_map_keyframe_voxel_leaf_size_ > 0.0) {
+            VoxelFilter voxel_filter = dense_map_keyframe_voxel_filter_;
+            voxel_filter.setInputCloud(filtered_keyframe_cloud.makeShared());
+            PCLPointCloud downsampled_keyframe_cloud;
+            voxel_filter.filter(downsampled_keyframe_cloud);
+            filtered_keyframe_cloud = std::move(downsampled_keyframe_cloud);
+        }
+
+        PCLPointCloud transformed_cloud = std::move(filtered_keyframe_cloud);
+        pcl::transformPointCloud(transformed_cloud, transformed_cloud,
+                                 poseToIsometry(keyframe.optimized_pose).matrix().cast<float>());
+        dense_map += transformed_cloud;
+    }
+
+    if (dense_map.empty() || dense_map_global_voxel_leaf_size_ <= 0.0) {
+        return dense_map;
+    }
+
+    PCLPointCloud filtered_dense_map;
+    VoxelFilter voxel_filter = dense_map_global_voxel_filter_;
+    voxel_filter.setInputCloud(dense_map.makeShared());
+    voxel_filter.filter(filtered_dense_map);
+    return filtered_dense_map;
 }
 
 }  // namespace IESKFSLAM

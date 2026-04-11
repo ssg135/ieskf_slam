@@ -61,6 +61,14 @@ inline double yawFromQuaternion(const Eigen::Quaterniond& rotation) {
     return std::atan2(matrix(1, 0), matrix(0, 0));
 }
 
+inline double wrapAngleRad(double angle_rad) {
+    return std::atan2(std::sin(angle_rad), std::cos(angle_rad));
+}
+
+inline double angleDistanceRad(double lhs_rad, double rhs_rad) {
+    return std::abs(wrapAngleRad(lhs_rad - rhs_rad));
+}
+
 inline Pose yawOnlyPose(double yaw_rad) {
     return makePose(Eigen::Quaterniond(Eigen::AngleAxisd(yaw_rad, Eigen::Vector3d::UnitZ())),
                     Eigen::Vector3d::Zero());

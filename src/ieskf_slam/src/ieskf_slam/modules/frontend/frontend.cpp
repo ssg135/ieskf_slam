@@ -71,6 +71,9 @@ namespace IESKFSLAM{
     const PCLPointCloud& FrontEnd::readFullPointCloud() const{
         return *full_point_cloud_ptr;
     }
+    const Timestamp& FrontEnd::readCurrentFrameStamp() const{
+        return current_frame_stamp_;
+    }
     bool FrontEnd::track(){
         const auto track_begin = std::chrono::steady_clock::now();
         MeasureGroup mg;
@@ -113,6 +116,7 @@ namespace IESKFSLAM{
             }
             const auto update_end = std::chrono::steady_clock::now();
             auto x = ieskf_ptr->getX();
+            current_frame_stamp_.fromSec(mg.lidar_end_time);
             if (enable_record) {
                 record_file << std::setprecision(15) << mg.lidar_end_time << " "
                 << x.position.x() << " " << x.position.y() << " "

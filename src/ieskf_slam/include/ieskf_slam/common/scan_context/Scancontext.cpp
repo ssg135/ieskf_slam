@@ -251,6 +251,10 @@ void SCManager::makeAndSaveScancontextAndKeys( pcl::PointCloud<SCPointType> & _s
 
 } // SCManager::makeAndSaveScancontextAndKeys
 
+void SCManager::setLoopThreshold(double threshold)
+{
+    sc_dist_thres_ = std::max(threshold, 1e-3);
+}
 
 std::pair<int, float> SCManager::detectLoopClosureID ( void )
 {
@@ -322,7 +326,7 @@ std::pair<int, float> SCManager::detectLoopClosureID ( void )
     /* 
      * loop threshold check
      */
-    if( min_dist < SC_DIST_THRES )
+    if( min_dist < sc_dist_thres_ )
     {
         loop_id = nn_idx; 
     

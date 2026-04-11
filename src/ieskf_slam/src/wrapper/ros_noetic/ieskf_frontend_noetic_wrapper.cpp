@@ -76,8 +76,11 @@ namespace ROSNoetic{
     void IESKFFrontEndWrapper::publishMsg(){
         static nav_msgs::Path path;
         auto X = front_end_ptr->readState();
+        const ros::Time frame_stamp(front_end_ptr->readCurrentFrameStamp().sec());
         path.header.frame_id = "map";
+        path.header.stamp = frame_stamp;
         geometry_msgs::PoseStamped pst;
+        pst.header = path.header;
         pst.pose.position.x = X.position.x();
         pst.pose.position.y = X.position.y();
         pst.pose.position.z = X.position.z();
@@ -88,10 +91,12 @@ namespace ROSNoetic{
         // auto cloud =front_end_ptr->readCurrentPointCloud();
         sensor_msgs::PointCloud2 msg;
         pcl::toROSMsg(cloud,msg);
+        msg.header.stamp = frame_stamp;
         msg.header.frame_id = "map";
         current_pointcloud_publisher.publish(msg);
         cloud = front_end_ptr->readCurrentLocalMap();
         pcl::toROSMsg(cloud,msg);
+        msg.header.stamp = frame_stamp;
         msg.header.frame_id = "map";
         current_local_map_publisher.publish(msg);
         ieskf_slam::CloudWithPose cloud_with_pose_msg;
@@ -104,7 +109,7 @@ namespace ROSNoetic{
         cloud_with_pose_msg.pose.orientation.x = X.rotation.x();
         cloud_with_pose_msg.pose.orientation.y = X.rotation.y();
         cloud_with_pose_msg.pose.orientation.z = X.rotation.z();
-        cloud_with_pose_msg.point_cloud.header.stamp = ros::Time::now();
+        cloud_with_pose_msg.point_cloud.header.stamp = frame_stamp;
         cloud_with_pose_msg.point_cloud.header.frame_id = "lidar";
         cloud_with_pose_publisher.publish(cloud_with_pose_msg);
         ROS_DEBUG_STREAM_THROTTLE(1.0, "publish path_size=" << path.poses.size()

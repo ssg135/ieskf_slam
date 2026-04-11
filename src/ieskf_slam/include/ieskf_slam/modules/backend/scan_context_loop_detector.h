@@ -8,6 +8,7 @@ namespace IESKFSLAM {
 
 class ScanContextLoopDetector : public LoopDetectorBase {
 public:
+    void setDistanceThreshold(double distance_threshold);
     void addKeyframe(const Keyframe& keyframe) override;
     LoopCandidate detect(const Keyframe& query_keyframe) override;
 

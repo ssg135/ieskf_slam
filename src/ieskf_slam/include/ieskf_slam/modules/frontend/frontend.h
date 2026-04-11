@@ -27,6 +27,7 @@ namespace IESKFSLAM{
         VoxelFilter voxel_filter;
         PCLPointCloudPtr filter_point_cloud_ptr;
         PCLPointCloudPtr full_point_cloud_ptr;
+        Timestamp current_frame_stamp_;
         bool imu_inited =false;
         Eigen::Quaterniond extrin_r;
         Eigen::Vector3d extrin_t;
@@ -44,7 +45,8 @@ namespace IESKFSLAM{
         bool track();
         const PCLPointCloud& readCurrentPointCloud() const;
         const PCLPointCloud& readCurrentLocalMap() const;
-        const PCLPointCloud& readFullPointCloud() const;
         const IESKF::State18& readState() const;
+        const PCLPointCloud& readFullPointCloud() const;
+        const Timestamp& readCurrentFrameStamp() const;
     };
 }
