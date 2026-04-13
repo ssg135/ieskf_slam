@@ -1,10 +1,15 @@
 #include "ieskf_slam/modules/backend/backend_coordinator.h"
+#include "ieskf_slam/common/logging.h"
 #include "ieskf_slam/modules/backend/backend_utils.h"
 #include <algorithm>
 #include <cmath>
 #include <pcl/common/transforms.h>
 
 namespace IESKFSLAM {
+
+namespace {
+constexpr double kWarnKeyframeGapSec = 5.0;
+}
 
 BackendCoordinator::BackendCoordinator(const std::string& config_path, const std::string& prefix)
     : ModuleBase(config_path, prefix, "BackEnd"),
@@ -27,10 +32,12 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
     readParam("odom_translation_information", odom_translation_information_, 100.0);
     readParam("odom_rotation_information", odom_rotation_information_, 150.0);
     double scan_context_distance_threshold = 0.18;
+    double loop_candidate_max_height_diff_m = 1.5;
     double loop_candidate_max_yaw_diff_deg_from_odom = 35.0;
     double loop_max_translation_delta_from_guess = 3.0;
     double loop_max_rotation_delta_deg_from_guess = 20.0;
     readParam("scan_context_distance_threshold", scan_context_distance_threshold, 0.18);
+    readParam("loop_candidate_max_height_diff_m", loop_candidate_max_height_diff_m, 1.5);
     readParam("loop_candidate_max_yaw_diff_deg_from_odom",
               loop_candidate_max_yaw_diff_deg_from_odom, 35.0);
     readParam("loop_max_translation_delta_from_guess",
@@ -67,6 +74,7 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
                                                     optimizer_damping_lambda);
 
     keyframe_rotation_thresh_rad_ = keyframe_rotation_thresh_deg * M_PI / 180.0;
+    loop_candidate_max_height_diff_m_ = std::max(loop_candidate_max_height_diff_m, 0.0);
     loop_submap_num_keyframes_each_side_ = std::max(loop_submap_num_keyframes_each_side_, 0);
     map_visualization_min_recent_keyframes_ = std::max(map_visualization_min_recent_keyframes_, 1);
     if (map_visualization_max_keyframes_ > 0) {
@@ -198,12 +206,33 @@ BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud
     current_keyframe.id = keyframe_id;
     result.inserted_keyframe = true;
     result.keyframe_id = keyframe_id;
+    const int frames_since_last_keyframe = frames_since_last_keyframe_;
     frames_since_last_keyframe_ = 0;
 
     pose_graph_optimizer_.addNode(keyframe_id, current_keyframe.optimized_pose);
     if (previous_keyframe_id >= 0) {
+        const Keyframe& previous_keyframe = keyframe_store_.get(previous_keyframe_id);
+        const double keyframe_gap_sec = current_keyframe.stamp_sec - previous_keyframe.stamp_sec;
+        if (keyframe_gap_sec > kWarnKeyframeGapSec) {
+            const double raw_translation =
+                (current_keyframe.raw_pose.position - previous_keyframe.raw_pose.position).norm();
+            const double optimized_translation =
+                (current_keyframe.optimized_pose.position - previous_keyframe.optimized_pose.position).norm();
+            result.detected_large_keyframe_gap = true;
+            result.previous_keyframe_id = previous_keyframe.id;
+            result.frames_since_last_keyframe = frames_since_last_keyframe;
+            result.keyframe_gap_sec = keyframe_gap_sec;
+            result.keyframe_raw_translation = raw_translation;
+            result.keyframe_optimized_translation = optimized_translation;
+            SLAM_LOG_WARN << "Large keyframe time gap before insert. prev_id=" << previous_keyframe.id
+                          << ", curr_id=" << current_keyframe.id
+                          << ", dt=" << keyframe_gap_sec
+                          << " s, frames_since_last_keyframe=" << frames_since_last_keyframe
+                          << ", raw_translation=" << raw_translation
+                          << " m, optimized_translation=" << optimized_translation << " m";
+        }
         pose_graph_optimizer_.addEdge(
-            makeOdometryEdge(keyframe_store_.get(previous_keyframe_id), current_keyframe));
+            makeOdometryEdge(previous_keyframe, current_keyframe));
     }
 
     loop_detector_.addKeyframe(current_keyframe);
@@ -211,24 +240,34 @@ BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud
     if (candidate.valid) {
         result.found_loop_candidate = true;
         result.loop_target_id = candidate.target_id;
-        const Keyframe target_submap_keyframe = buildLoopSubmapKeyframe(candidate.target_id);
-        const LoopConstraint loop_constraint = loop_registrar_.registerLoop(
-            current_keyframe, target_submap_keyframe, candidate);
-        if (loop_constraint.valid) {
-            GraphEdge loop_edge;
-            loop_edge.from_id = loop_constraint.from_id;
-            loop_edge.to_id = loop_constraint.to_id;
-            loop_edge.relative_pose = loop_constraint.relative_pose;
-            loop_edge.information = loop_constraint.information;
-            loop_edge.type = GraphEdge::Type::LOOP;
-            pose_graph_optimizer_.addEdge(loop_edge);
-            result.accepted_loop = true;
+        const Keyframe& target_keyframe = keyframe_store_.get(candidate.target_id);
+        const double loop_height_delta =
+            std::abs(current_keyframe.optimized_pose.position.z() - target_keyframe.optimized_pose.position.z());
+        if (loop_candidate_max_height_diff_m_ > 0.0 &&
+            loop_height_delta > loop_candidate_max_height_diff_m_) {
+            SLAM_LOG_WARN << "Reject loop candidate " << candidate.target_id << " -> "
+                          << current_keyframe.id << " due to height gap: "
+                          << loop_height_delta << " m";
+        } else {
+            const Keyframe target_submap_keyframe = buildLoopSubmapKeyframe(candidate.target_id);
+            const LoopConstraint loop_constraint = loop_registrar_.registerLoop(
+                current_keyframe, target_submap_keyframe, candidate);
+            if (loop_constraint.valid) {
+                GraphEdge loop_edge;
+                loop_edge.from_id = loop_constraint.from_id;
+                loop_edge.to_id = loop_constraint.to_id;
+                loop_edge.relative_pose = loop_constraint.relative_pose;
+                loop_edge.information = loop_constraint.information;
+                loop_edge.type = GraphEdge::Type::LOOP;
+                pose_graph_optimizer_.addEdge(loop_edge);
+                result.accepted_loop = true;
 
-            if (pose_graph_optimizer_.optimize()) {
-                keyframe_store_.updateOptimizedPoses(pose_graph_optimizer_.nodePoses());
-                result.optimized = true;
-            } else {
-                pose_graph_optimizer_.removeLastEdge();
+                if (pose_graph_optimizer_.optimize()) {
+                    keyframe_store_.updateOptimizedPoses(pose_graph_optimizer_.nodePoses());
+                    result.optimized = true;
+                } else {
+                    pose_graph_optimizer_.removeLastEdge();
+                }
             }
         }
     }

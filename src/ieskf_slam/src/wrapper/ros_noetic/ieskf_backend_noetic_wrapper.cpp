@@ -7,9 +7,15 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 
 namespace ROSNoetic
 {
+    namespace {
+        constexpr double kWarnCloudWithPoseGapSec = 5.0;
+        constexpr std::size_t kDefaultCloudWithPoseQueueCapacity = 100;
+    }
+
     IESKFBackEndWrapper::IESKFBackEndWrapper(ros::NodeHandle& nh)
         : backend_coordinator([&nh]() {
               std::string config_file_name;
@@ -25,18 +31,46 @@ namespace ROSNoetic
         nh.param<bool>("back_end/enable_record_raw", enable_record_raw_, false);
         nh.param<bool>("back_end/enable_record_optimized", enable_record_optimized_, false);
         nh.param<bool>("back_end/enable_save_dense_map", enable_save_dense_map_, true);
+        int cloud_with_pose_queue_capacity = static_cast<int>(kDefaultCloudWithPoseQueueCapacity);
+        nh.param<int>("back_end/cloud_with_pose_queue_capacity", cloud_with_pose_queue_capacity,
+                      static_cast<int>(kDefaultCloudWithPoseQueueCapacity));
         nh.param<std::string>("back_end/raw_record_file_name", raw_record_file_name_,
                               "backend_raw_keyframes.txt");
         nh.param<std::string>("back_end/optimized_record_file_name", optimized_record_file_name_,
                               "backend_optimized_keyframes.txt");
         nh.param<std::string>("back_end/dense_map_file_name", dense_map_file_name_,
                               "optimized_map_dense.pcd");
+        nh.param<std::string>("back_end/anomaly_log_file_name", anomaly_log_file_name_,
+                              "backend_anomalies.txt");
+        anomaly_log_file_.open(RESULT_DIR + anomaly_log_file_name_, std::ios::out | std::ios::trunc);
+        if (!anomaly_log_file_.is_open()) {
+            ROS_WARN_STREAM("failed to open backend anomaly log file: " << RESULT_DIR + anomaly_log_file_name_);
+        } else {
+            anomaly_log_file_ << std::setprecision(15);
+        }
+        cloud_with_pose_queue_capacity_ =
+            std::max<std::size_t>(1, static_cast<std::size_t>(cloud_with_pose_queue_capacity));
+        if (enable_record_raw_) {
+            prepareRecordFile(raw_record_file_name_);
+        }
+        if (enable_record_optimized_) {
+            prepareRecordFile(optimized_record_file_name_);
+        }
         optimized_map_publish_hz_ = std::max(optimized_map_publish_hz_, 0.1);
+        backend_worker_thread_ = std::thread(&IESKFBackEndWrapper::backendWorkerLoop, this);
         optimized_map_thread_ = std::thread(&IESKFBackEndWrapper::optimizedMapPublishLoop, this);
     }
 
     IESKFBackEndWrapper::~IESKFBackEndWrapper()
     {
+        {
+            std::lock_guard<std::mutex> lock(cloud_with_pose_queue_mutex_);
+            stop_backend_worker_thread_ = true;
+        }
+        cloud_with_pose_queue_cv_.notify_all();
+        if (backend_worker_thread_.joinable()) {
+            backend_worker_thread_.join();
+        }
         {
             std::lock_guard<std::mutex> lock(optimized_map_state_mutex_);
             stop_optimized_map_thread_ = true;
@@ -45,10 +79,70 @@ namespace ROSNoetic
         if (optimized_map_thread_.joinable()) {
             optimized_map_thread_.join();
         }
+        if (anomaly_log_file_.is_open()) {
+            anomaly_log_file_.flush();
+            anomaly_log_file_.close();
+        }
         saveDenseMapToFile();
     }
 
     void IESKFBackEndWrapper::CloudWithPoseMsgCallBack(const ieskf_slam::CloudWithPose::ConstPtr& msg)
+    {
+        if (!last_cloud_with_pose_stamp_.isZero()) {
+            const double input_gap_sec = (msg->point_cloud.header.stamp - last_cloud_with_pose_stamp_).toSec();
+            if (input_gap_sec > kWarnCloudWithPoseGapSec) {
+                ROS_WARN_STREAM("backend cloud_with_pose input gap: dt=" << input_gap_sec
+                                << " s, stamp=" << msg->point_cloud.header.stamp.toSec()
+                                << ", cloud_points=" << static_cast<std::size_t>(msg->point_cloud.width) *
+                                       static_cast<std::size_t>(msg->point_cloud.height));
+                std::ostringstream oss;
+                oss << "backend cloud_with_pose input gap"
+                    << " stamp=" << msg->point_cloud.header.stamp.toSec()
+                    << " dt=" << input_gap_sec
+                    << " cloud_points=" << static_cast<std::size_t>(msg->point_cloud.width) *
+                           static_cast<std::size_t>(msg->point_cloud.height);
+                writeAnomalyLogLine(oss.str());
+            }
+        }
+        last_cloud_with_pose_stamp_ = msg->point_cloud.header.stamp;
+        {
+            std::lock_guard<std::mutex> lock(cloud_with_pose_queue_mutex_);
+            if (pending_cloud_with_pose_queue_.size() >= cloud_with_pose_queue_capacity_) {
+                const auto dropped_msg = pending_cloud_with_pose_queue_.front();
+                pending_cloud_with_pose_queue_.pop_front();
+                std::ostringstream oss;
+                oss << "backend cloud_with_pose queue overflow"
+                    << " dropped_stamp=" << dropped_msg->point_cloud.header.stamp.toSec()
+                    << " pending_after_drop=" << pending_cloud_with_pose_queue_.size();
+                writeAnomalyLogLine(oss.str());
+                ROS_WARN_STREAM("backend cloud_with_pose queue overflow, dropped oldest message with stamp "
+                                << dropped_msg->point_cloud.header.stamp.toSec());
+            }
+            pending_cloud_with_pose_queue_.push_back(msg);
+        }
+        cloud_with_pose_queue_cv_.notify_one();
+    }
+
+    void IESKFBackEndWrapper::backendWorkerLoop()
+    {
+        while (true) {
+            ieskf_slam::CloudWithPose::ConstPtr msg;
+            {
+                std::unique_lock<std::mutex> lock(cloud_with_pose_queue_mutex_);
+                cloud_with_pose_queue_cv_.wait(lock, [this]() {
+                    return stop_backend_worker_thread_ || !pending_cloud_with_pose_queue_.empty();
+                });
+                if (stop_backend_worker_thread_ && pending_cloud_with_pose_queue_.empty()) {
+                    return;
+                }
+                msg = pending_cloud_with_pose_queue_.front();
+                pending_cloud_with_pose_queue_.pop_front();
+            }
+            processCloudWithPoseMsg(msg);
+        }
+    }
+
+    void IESKFBackEndWrapper::processCloudWithPoseMsg(const ieskf_slam::CloudWithPose::ConstPtr& msg)
     {
         IESKFSLAM::PCLPointCloud in_cloud;
         IESKFSLAM::Pose pose;
@@ -65,23 +159,36 @@ namespace ROSNoetic
             return;
         }
         IESKFSLAM::BackendProcessResult result;
-        std::vector<IESKFSLAM::Pose> raw_poses;
         std::vector<IESKFSLAM::Pose> optimized_poses;
         {
             std::lock_guard<std::mutex> lock(backend_mutex_);
             result = backend_coordinator.processFrame(in_cloud, pose, msg->point_cloud.header.stamp.toSec());
             if (result.inserted_keyframe) {
-                raw_poses = backend_coordinator.readRawPoses();
                 optimized_poses = backend_coordinator.readOptimizedPoses();
             }
+        }
+        if (result.detected_large_keyframe_gap) {
+            std::ostringstream oss;
+            oss << "large keyframe time gap before insert"
+                << " prev_id=" << result.previous_keyframe_id
+                << " curr_id=" << result.keyframe_id
+                << " dt=" << result.keyframe_gap_sec
+                << " frames_since_last_keyframe=" << result.frames_since_last_keyframe
+                << " raw_translation=" << result.keyframe_raw_translation
+                << " optimized_translation=" << result.keyframe_optimized_translation;
+            writeAnomalyLogLine(oss.str());
         }
         if (result.inserted_keyframe) {
             publishOptimizedPath(optimized_poses, msg->point_cloud.header.stamp);
             if (enable_record_raw_) {
-                writeTrajectoryToFile(raw_record_file_name_, raw_poses);
+                appendPoseToRecordFile(raw_record_file_name_, pose);
             }
             if (enable_record_optimized_) {
-                writeTrajectoryToFile(optimized_record_file_name_, optimized_poses);
+                if (result.optimized) {
+                    writeTrajectoryToFile(optimized_record_file_name_, optimized_poses);
+                } else if (!optimized_poses.empty()) {
+                    appendPoseToRecordFile(optimized_record_file_name_, optimized_poses.back());
+                }
             }
             {
                 std::lock_guard<std::mutex> lock(optimized_map_state_mutex_);
@@ -113,6 +220,30 @@ namespace ROSNoetic
         optimized_path_pub.publish(path_msg);
     }
 
+    void IESKFBackEndWrapper::prepareRecordFile(const std::string& file_name) const
+    {
+        std::ofstream record_file(RESULT_DIR + file_name, std::ios::out | std::ios::trunc);
+        if (!record_file.is_open()) {
+            ROS_WARN_STREAM("failed to prepare backend record file: " << RESULT_DIR + file_name);
+        }
+    }
+
+    void IESKFBackEndWrapper::appendPoseToRecordFile(const std::string& file_name,
+                                                     const IESKFSLAM::Pose& pose) const
+    {
+        std::ofstream record_file(RESULT_DIR + file_name, std::ios::out | std::ios::app);
+        if (!record_file.is_open()) {
+            ROS_WARN_STREAM("failed to open backend record file for append: " << RESULT_DIR + file_name);
+            return;
+        }
+        record_file << std::setprecision(15)
+                    << pose.time_stamp.sec() << " "
+                    << pose.position.x() << " " << pose.position.y() << " "
+                    << pose.position.z() << " " << pose.rotation.x() << " "
+                    << pose.rotation.y() << " " << pose.rotation.z() << " "
+                    << pose.rotation.w() << std::endl;
+    }
+
     void IESKFBackEndWrapper::writeTrajectoryToFile(const std::string& file_name,
                                                     const std::vector<IESKFSLAM::Pose>& poses) const
     {
@@ -129,6 +260,16 @@ namespace ROSNoetic
                         << pose.rotation.y() << " " << pose.rotation.z() << " "
                         << pose.rotation.w() << std::endl;
         }
+    }
+
+    void IESKFBackEndWrapper::writeAnomalyLogLine(const std::string& line)
+    {
+        std::lock_guard<std::mutex> lock(anomaly_log_mutex_);
+        if (!anomaly_log_file_.is_open()) {
+            return;
+        }
+        anomaly_log_file_ << line << std::endl;
+        anomaly_log_file_.flush();
     }
 
     void IESKFBackEndWrapper::saveDenseMapToFile()

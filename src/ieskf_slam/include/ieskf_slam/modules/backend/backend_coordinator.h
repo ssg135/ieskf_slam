@@ -39,6 +39,7 @@ private:
     int map_visualization_min_recent_keyframes_;
     int map_visualization_max_keyframes_;
     int loop_submap_num_keyframes_each_side_;
+    double loop_candidate_max_height_diff_m_;
     double odom_translation_information_;
     double odom_rotation_information_;
 

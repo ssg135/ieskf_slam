@@ -53,8 +53,14 @@ struct BackendProcessResult {
     bool found_loop_candidate = false;
     bool accepted_loop = false;
     bool optimized = false;
+    bool detected_large_keyframe_gap = false;
     int keyframe_id = -1;
     int loop_target_id = -1;
+    int previous_keyframe_id = -1;
+    int frames_since_last_keyframe = 0;
+    double keyframe_gap_sec = 0.0;
+    double keyframe_raw_translation = 0.0;
+    double keyframe_optimized_translation = 0.0;
 };
 
 }  // namespace IESKFSLAM

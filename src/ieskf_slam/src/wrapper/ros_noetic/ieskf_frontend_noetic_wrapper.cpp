@@ -4,8 +4,14 @@
 #include "ieskf_slam/math/math.h"
 #include <nav_msgs/Path.h>
 #include <pcl/common/transforms.h>
+#include <iomanip>
+#include <sstream>
 
 namespace ROSNoetic{
+    namespace {
+        constexpr double kWarnCloudWithPosePublishGapSec = 5.0;
+    }
+
     IESKFFrontEndWrapper::IESKFFrontEndWrapper(ros::NodeHandle& nh){
         std::string lidar_topic, imu_topic, config_file_name;
         nh.param<std::string>("wrapper/config_file_name", config_file_name, "");
@@ -23,6 +29,14 @@ namespace ROSNoetic{
         current_local_map_publisher = nh.advertise<sensor_msgs::PointCloud2>("local_map", 100);
         cloud_with_pose_publisher = nh.advertise<ieskf_slam::CloudWithPose>("cloud_with_pose",100);
         path_publisher = nh.advertise<nav_msgs::Path>("path", 100);
+        nh.param<std::string>("front_end/anomaly_log_file_name", anomaly_log_file_name_,
+                              "frontend_publish_anomalies.txt");
+        anomaly_log_file_.open(RESULT_DIR + anomaly_log_file_name_, std::ios::out | std::ios::trunc);
+        if (!anomaly_log_file_.is_open()) {
+            ROS_WARN_STREAM("failed to open frontend anomaly log file: " << RESULT_DIR + anomaly_log_file_name_);
+        } else {
+            anomaly_log_file_ << std::setprecision(15);
+        }
         int lidar_type = 0;
         nh.param<int>("wrapper/lidar_type", lidar_type, AVIA);
         if(lidar_type == AVIA){
@@ -41,7 +55,12 @@ namespace ROSNoetic{
 
         run();
     }
-    IESKFFrontEndWrapper::~IESKFFrontEndWrapper(){}
+    IESKFFrontEndWrapper::~IESKFFrontEndWrapper(){
+        if (anomaly_log_file_.is_open()) {
+            anomaly_log_file_.flush();
+            anomaly_log_file_.close();
+        }
+    }
 
     void IESKFFrontEndWrapper::lidarCloudMsgCallBack(const sensor_msgs::PointCloud2ConstPtr& msg){
         IESKFSLAM::PointCloud cloud = lidar_process_ptr->process(*msg);
@@ -111,10 +130,36 @@ namespace ROSNoetic{
         cloud_with_pose_msg.pose.orientation.z = X.rotation.z();
         cloud_with_pose_msg.point_cloud.header.stamp = frame_stamp;
         cloud_with_pose_msg.point_cloud.header.frame_id = "lidar";
+        if (!last_cloud_with_pose_publish_stamp_.isZero()) {
+            const double publish_gap_sec =
+                (cloud_with_pose_msg.point_cloud.header.stamp - last_cloud_with_pose_publish_stamp_).toSec();
+            if (publish_gap_sec > kWarnCloudWithPosePublishGapSec) {
+                ROS_WARN_STREAM("frontend cloud_with_pose publish gap: dt=" << publish_gap_sec
+                                << " s, stamp=" << cloud_with_pose_msg.point_cloud.header.stamp.toSec()
+                                << ", path_size=" << path.poses.size()
+                                << ", cloud_size=" << cloud.size());
+                std::ostringstream oss;
+                oss << "frontend cloud_with_pose publish gap"
+                    << " stamp=" << cloud_with_pose_msg.point_cloud.header.stamp.toSec()
+                    << " dt=" << publish_gap_sec
+                    << " path_size=" << path.poses.size()
+                    << " cloud_size=" << cloud.size();
+                writeAnomalyLogLine(oss.str());
+            }
+        }
+        last_cloud_with_pose_publish_stamp_ = cloud_with_pose_msg.point_cloud.header.stamp;
         cloud_with_pose_publisher.publish(cloud_with_pose_msg);
         ROS_DEBUG_STREAM_THROTTLE(1.0, "publish path_size=" << path.poses.size()
                                   << ", cloud_size=" << cloud.size()
                                   << ", position=[" << X.position.transpose() << "]");
+    }
+
+    void IESKFFrontEndWrapper::writeAnomalyLogLine(const std::string& line){
+        if (!anomaly_log_file_.is_open()) {
+            return;
+        }
+        anomaly_log_file_ << line << std::endl;
+        anomaly_log_file_.flush();
     }
 
 }

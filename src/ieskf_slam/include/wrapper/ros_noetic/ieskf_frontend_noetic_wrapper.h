@@ -9,6 +9,7 @@
 #include "wrapper/ros_noetic/lidar_process/velodyne_process.h"
 #include <pcl_conversions/pcl_conversions.h>
 #include <Eigen/Dense>
+#include <fstream>
 #include <tf/transform_broadcaster.h>
 #include "ieskf_slam/CloudWithPose.h"
 
@@ -27,6 +28,9 @@ namespace ROSNoetic{
             ros::Publisher current_local_map_publisher;
             ros::Publisher path_publisher;
             ros::Publisher cloud_with_pose_publisher;
+            ros::Time last_cloud_with_pose_publish_stamp_;
+            std::string anomaly_log_file_name_ = "frontend_publish_anomalies.txt";
+            std::ofstream anomaly_log_file_;
             std::shared_ptr<CommonLidarProcessInterface> lidar_process_ptr;
             
 
@@ -37,6 +41,7 @@ namespace ROSNoetic{
             void imuMsgCallBack(const sensor_msgs::ImuConstPtr& msg);
             void run();
             void publishMsg();
+            void writeAnomalyLogLine(const std::string& line);
         public:
             IESKFFrontEndWrapper(ros::NodeHandle& nh);
             ~IESKFFrontEndWrapper();
