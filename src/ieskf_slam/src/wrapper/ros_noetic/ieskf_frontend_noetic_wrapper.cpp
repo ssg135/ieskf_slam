@@ -17,6 +17,8 @@ namespace ROSNoetic{
         nh.param<std::string>("wrapper/config_file_name", config_file_name, "");
         nh.param<std::string>("wrapper/lidar_topic", lidar_topic, "/lidar");
         nh.param<std::string>("wrapper/imu_topic", imu_topic, "/imu");
+        nh.param<std::string>("wrapper/map_frame_id", map_frame_id_, "map");
+        nh.param<std::string>("wrapper/lidar_frame_id", lidar_frame_id_, "lidar");
         ROS_DEBUG_STREAM("lidar_topic: " << lidar_topic);
         ROS_DEBUG_STREAM("imu_topic: " << imu_topic);
         ROS_DEBUG_STREAM("config_file_name: " << config_file_name);
@@ -53,7 +55,6 @@ namespace ROSNoetic{
             exit(100);
         }
 
-        run();
     }
     IESKFFrontEndWrapper::~IESKFFrontEndWrapper(){
         if (anomaly_log_file_.is_open()) {
@@ -83,40 +84,56 @@ namespace ROSNoetic{
     void IESKFFrontEndWrapper::run(){
         ros::Rate rate(500);
         while(ros::ok()){
-            rate.sleep();
             ros::spinOnce();
-            if(front_end_ptr->track()){
-                publishMsg();
-            } else {
-                ROS_DEBUG_THROTTLE(1.0, "front_end track() did not produce a publishable state");
-            }
+            spinOnce();
+            rate.sleep();
         }
+    }
+    bool IESKFFrontEndWrapper::spinOnce(){
+        if(front_end_ptr->track()){
+            publishMsg();
+            return true;
+        }
+
+        ROS_DEBUG_THROTTLE(1.0, "front_end track() did not produce a publishable state");
+        return false;
     }
     void IESKFFrontEndWrapper::publishMsg(){
         static nav_msgs::Path path;
         auto X = front_end_ptr->readState();
         const ros::Time frame_stamp(front_end_ptr->readCurrentFrameStamp().sec());
-        path.header.frame_id = "map";
+        path.header.frame_id = map_frame_id_;
         path.header.stamp = frame_stamp;
         geometry_msgs::PoseStamped pst;
         pst.header = path.header;
         pst.pose.position.x = X.position.x();
         pst.pose.position.y = X.position.y();
         pst.pose.position.z = X.position.z();
+        pst.pose.orientation.w = X.rotation.w();
+        pst.pose.orientation.x = X.rotation.x();
+        pst.pose.orientation.y = X.rotation.y();
+        pst.pose.orientation.z = X.rotation.z();
         path.poses.push_back(pst);
         path_publisher.publish(path);
+
+        tf_broadcaster_.sendTransform(
+            tf::StampedTransform(
+                tf::Transform(tf::Quaternion(X.rotation.x(), X.rotation.y(), X.rotation.z(), X.rotation.w()),
+                              tf::Vector3(X.position.x(), X.position.y(), X.position.z())),
+                frame_stamp, map_frame_id_, lidar_frame_id_));
+
         IESKFSLAM::PCLPointCloud cloud = front_end_ptr->readCurrentPointCloud();
         pcl::transformPointCloud(cloud,cloud,IESKFSLAM::compositeTransform(X.rotation,X.position).cast<float>());
         // auto cloud =front_end_ptr->readCurrentPointCloud();
         sensor_msgs::PointCloud2 msg;
         pcl::toROSMsg(cloud,msg);
         msg.header.stamp = frame_stamp;
-        msg.header.frame_id = "map";
+        msg.header.frame_id = map_frame_id_;
         current_pointcloud_publisher.publish(msg);
         cloud = front_end_ptr->readCurrentLocalMap();
         pcl::toROSMsg(cloud,msg);
         msg.header.stamp = frame_stamp;
-        msg.header.frame_id = "map";
+        msg.header.frame_id = map_frame_id_;
         current_local_map_publisher.publish(msg);
         ieskf_slam::CloudWithPose cloud_with_pose_msg;
         cloud = front_end_ptr->readFullPointCloud();
@@ -129,7 +146,7 @@ namespace ROSNoetic{
         cloud_with_pose_msg.pose.orientation.y = X.rotation.y();
         cloud_with_pose_msg.pose.orientation.z = X.rotation.z();
         cloud_with_pose_msg.point_cloud.header.stamp = frame_stamp;
-        cloud_with_pose_msg.point_cloud.header.frame_id = "lidar";
+        cloud_with_pose_msg.point_cloud.header.frame_id = lidar_frame_id_;
         if (!last_cloud_with_pose_publish_stamp_.isZero()) {
             const double publish_gap_sec =
                 (cloud_with_pose_msg.point_cloud.header.stamp - last_cloud_with_pose_publish_stamp_).toSec();

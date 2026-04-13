@@ -10,6 +10,7 @@ int main(int argc, char *argv[])
     ros::NodeHandle nh;
     std::shared_ptr<ROSNoetic::IESKFFrontEndWrapper>front_end_wrapper_ptr;
     front_end_wrapper_ptr = std::make_shared<ROSNoetic::IESKFFrontEndWrapper>(nh);
+    front_end_wrapper_ptr->run();
     google::ShutdownGoogleLogging();
     return 0;
 }

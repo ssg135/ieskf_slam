@@ -7,6 +7,7 @@
 #include "ieskf_slam/modules/backend/scan_context_loop_detector.h"
 #include "ieskf_slam/modules/module_base.h"
 #include "ieskf_slam/type/base_type.h"
+#include <mutex>
 
 namespace IESKFSLAM {
 
@@ -14,14 +15,15 @@ class BackendCoordinator : private ModuleBase {
 public:
     BackendCoordinator(const std::string& config_path, const std::string& prefix);
 
-    BackendProcessResult processFrame(const PCLPointCloud& cloud, const Pose& raw_pose, double stamp_sec);
-    std::vector<Pose> readRawPoses() const;
+    bool isLoopClosureEnabled() const;
+    bool shouldCreateKeyframe(const Pose& raw_pose);
+    BackendProcessResult processKeyframe(const PCLPointCloud& cloud, const Pose& raw_pose, double stamp_sec);
+    BackendProcessResult processLoopClosure(int keyframe_id);
     std::vector<Pose> readOptimizedPoses() const;
     PCLPointCloud buildOptimizedMap() const;
     PCLPointCloud buildDenseOptimizedMap() const;
 
 private:
-    bool shouldCreateKeyframe(const Pose& raw_pose);
     Keyframe makeKeyframe(const PCLPointCloud& cloud, const Pose& raw_pose, double stamp_sec) const;
     GraphEdge makeOdometryEdge(const Keyframe& previous_keyframe, const Keyframe& current_keyframe) const;
     Pose initialGuessFromPrevious(const Pose& raw_pose) const;
@@ -39,6 +41,7 @@ private:
     int map_visualization_min_recent_keyframes_;
     int map_visualization_max_keyframes_;
     int loop_submap_num_keyframes_each_side_;
+    bool enable_loop_closure_;
     double loop_candidate_max_height_diff_m_;
     double odom_translation_information_;
     double odom_rotation_information_;
@@ -51,6 +54,7 @@ private:
     mutable VoxelFilter dense_map_keyframe_voxel_filter_;
     mutable VoxelFilter dense_map_global_voxel_filter_;
     VoxelFilter keyframe_voxel_filter_;
+    mutable std::mutex mutex_;
     int frames_since_last_keyframe_ = 0;
     int last_keyframe_id_ = -1;
 };

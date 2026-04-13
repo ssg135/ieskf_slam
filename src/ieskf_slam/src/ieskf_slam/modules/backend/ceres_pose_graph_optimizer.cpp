@@ -135,7 +135,7 @@ bool CeresPoseGraphOptimizer::optimize() {
 
     ceres::Solver::Options options;
     options.max_num_iterations = max_iterations_;
-    options.linear_solver_type = ceres::DENSE_QR;
+    options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
     options.parameter_tolerance = std::max(stop_delta_norm_, 1e-12);
     options.function_tolerance = std::max(stop_delta_norm_ * 1e-2, 1e-12);

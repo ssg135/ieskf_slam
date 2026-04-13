@@ -308,6 +308,21 @@ target_link_libraries(ieskf_backend_node
   ${GLOG_LIBRARIES}
 )
 
+add_executable(ieskf_slam_node
+  src/app/ieskf_slam_node.cpp
+)
+add_dependencies(ieskf_slam_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(ieskf_slam_node
+  ieskf_wrapper_lib
+  ieskf_slam_lib
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${GLOG_LIBRARIES}
+)
+
 #############
 ## Install ##
 #############

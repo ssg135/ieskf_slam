@@ -28,7 +28,10 @@ namespace ROSNoetic{
             ros::Publisher current_local_map_publisher;
             ros::Publisher path_publisher;
             ros::Publisher cloud_with_pose_publisher;
+            tf::TransformBroadcaster tf_broadcaster_;
             ros::Time last_cloud_with_pose_publish_stamp_;
+            std::string map_frame_id_ = "map";
+            std::string lidar_frame_id_ = "lidar";
             std::string anomaly_log_file_name_ = "frontend_publish_anomalies.txt";
             std::ofstream anomaly_log_file_;
             std::shared_ptr<CommonLidarProcessInterface> lidar_process_ptr;
@@ -39,11 +42,12 @@ namespace ROSNoetic{
             Eigen::Vector3d curr_t;
             void lidarCloudMsgCallBack(const sensor_msgs::PointCloud2ConstPtr& msg);
             void imuMsgCallBack(const sensor_msgs::ImuConstPtr& msg);
-            void run();
             void publishMsg();
             void writeAnomalyLogLine(const std::string& line);
         public:
             IESKFFrontEndWrapper(ros::NodeHandle& nh);
             ~IESKFFrontEndWrapper();
+            void run();
+            bool spinOnce();
     };
 }

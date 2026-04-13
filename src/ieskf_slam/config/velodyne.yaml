@@ -26,11 +26,7 @@ ieskf:
   cov_bias_gyroscope: 0.0001
 
 back_end:
-  optimized_map_publish_hz: 1.0
-  enable_record_raw: true
-  raw_record_file_name: backend_raw_keyframes.txt
-  enable_record_optimized: true
-  optimized_record_file_name: backend_optimized_keyframes.txt
+  enable_loop_closure: false
   enable_save_dense_map: true
   dense_map_file_name: optimized_map_dense.pcd
   dense_map_keyframe_voxel_leaf_size: 0.3

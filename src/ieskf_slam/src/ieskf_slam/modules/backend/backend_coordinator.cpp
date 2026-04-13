@@ -29,6 +29,7 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
     readParam("map_visualization_min_recent_keyframes", map_visualization_min_recent_keyframes_, 20);
     readParam("map_visualization_max_keyframes", map_visualization_max_keyframes_, 80);
     readParam("loop_submap_num_keyframes_each_side", loop_submap_num_keyframes_each_side_, 10);
+    readParam("enable_loop_closure", enable_loop_closure_, false);
     readParam("odom_translation_information", odom_translation_information_, 100.0);
     readParam("odom_rotation_information", odom_rotation_information_, 150.0);
     double scan_context_distance_threshold = 0.18;
@@ -93,7 +94,12 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
     print_table();
 }
 
+bool BackendCoordinator::isLoopClosureEnabled() const {
+    return enable_loop_closure_;
+}
+
 bool BackendCoordinator::shouldCreateKeyframe(const Pose& raw_pose) {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (keyframe_store_.empty()) {
         return true;
     }
@@ -109,6 +115,7 @@ bool BackendCoordinator::shouldCreateKeyframe(const Pose& raw_pose) {
 }
 
 Pose BackendCoordinator::initialGuessFromPrevious(const Pose& raw_pose) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (keyframe_store_.empty()) {
         return raw_pose;
     }
@@ -192,14 +199,11 @@ Keyframe BackendCoordinator::buildLoopSubmapKeyframe(int target_keyframe_id) con
     return submap_keyframe;
 }
 
-BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud, const Pose& raw_pose,
-                                                      double stamp_sec) {
+BackendProcessResult BackendCoordinator::processKeyframe(const PCLPointCloud& cloud, const Pose& raw_pose,
+                                                         double stamp_sec) {
     BackendProcessResult result;
-    if (!shouldCreateKeyframe(raw_pose)) {
-        return result;
-    }
-
     Keyframe keyframe = makeKeyframe(cloud, raw_pose, stamp_sec);
+    std::lock_guard<std::mutex> lock(mutex_);
     const int previous_keyframe_id = last_keyframe_id_;
     const int keyframe_id = keyframe_store_.addKeyframe(std::move(keyframe));
     Keyframe& current_keyframe = keyframe_store_.mutableGet(keyframe_id);
@@ -231,16 +235,47 @@ BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud
                           << ", raw_translation=" << raw_translation
                           << " m, optimized_translation=" << optimized_translation << " m";
         }
-        pose_graph_optimizer_.addEdge(
-            makeOdometryEdge(previous_keyframe, current_keyframe));
+        pose_graph_optimizer_.addEdge(makeOdometryEdge(previous_keyframe, current_keyframe));
+    }
+
+    last_keyframe_id_ = keyframe_id;
+    return result;
+}
+
+BackendProcessResult BackendCoordinator::processLoopClosure(int keyframe_id) {
+    BackendProcessResult result;
+    result.keyframe_id = keyframe_id;
+    if (!enable_loop_closure_) {
+        return result;
+    }
+
+    Keyframe current_keyframe;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (keyframe_id < 0 || keyframe_id >= static_cast<int>(keyframe_store_.size())) {
+            return result;
+        }
+        current_keyframe = keyframe_store_.get(keyframe_id);
     }
 
     loop_detector_.addKeyframe(current_keyframe);
     const LoopCandidate candidate = loop_detector_.detect(current_keyframe);
-    if (candidate.valid) {
-        result.found_loop_candidate = true;
-        result.loop_target_id = candidate.target_id;
-        const Keyframe& target_keyframe = keyframe_store_.get(candidate.target_id);
+    if (!candidate.valid) {
+        return result;
+    }
+
+    result.found_loop_candidate = true;
+    result.loop_target_id = candidate.target_id;
+
+    Keyframe target_keyframe;
+    Keyframe target_submap_keyframe;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (candidate.target_id < 0 || candidate.target_id >= static_cast<int>(keyframe_store_.size())) {
+            return result;
+        }
+
+        target_keyframe = keyframe_store_.get(candidate.target_id);
         const double loop_height_delta =
             std::abs(current_keyframe.optimized_pose.position.z() - target_keyframe.optimized_pose.position.z());
         if (loop_candidate_max_height_diff_m_ > 0.0 &&
@@ -248,35 +283,43 @@ BackendProcessResult BackendCoordinator::processFrame(const PCLPointCloud& cloud
             SLAM_LOG_WARN << "Reject loop candidate " << candidate.target_id << " -> "
                           << current_keyframe.id << " due to height gap: "
                           << loop_height_delta << " m";
-        } else {
-            const Keyframe target_submap_keyframe = buildLoopSubmapKeyframe(candidate.target_id);
-            const LoopConstraint loop_constraint = loop_registrar_.registerLoop(
-                current_keyframe, target_submap_keyframe, candidate);
-            if (loop_constraint.valid) {
-                GraphEdge loop_edge;
-                loop_edge.from_id = loop_constraint.from_id;
-                loop_edge.to_id = loop_constraint.to_id;
-                loop_edge.relative_pose = loop_constraint.relative_pose;
-                loop_edge.information = loop_constraint.information;
-                loop_edge.type = GraphEdge::Type::LOOP;
-                pose_graph_optimizer_.addEdge(loop_edge);
-                result.accepted_loop = true;
+            return result;
+        }
 
-                if (pose_graph_optimizer_.optimize()) {
-                    keyframe_store_.updateOptimizedPoses(pose_graph_optimizer_.nodePoses());
-                    result.optimized = true;
-                } else {
-                    pose_graph_optimizer_.removeLastEdge();
-                }
-            }
+        target_submap_keyframe = buildLoopSubmapKeyframe(candidate.target_id);
+    }
+
+    const LoopConstraint loop_constraint =
+        loop_registrar_.registerLoop(current_keyframe, target_submap_keyframe, candidate);
+    if (!loop_constraint.valid) {
+        return result;
+    }
+
+    GraphEdge loop_edge;
+    loop_edge.from_id = loop_constraint.from_id;
+    loop_edge.to_id = loop_constraint.to_id;
+    loop_edge.relative_pose = loop_constraint.relative_pose;
+    loop_edge.information = loop_constraint.information;
+    loop_edge.type = GraphEdge::Type::LOOP;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pose_graph_optimizer_.addEdge(loop_edge);
+        result.accepted_loop = true;
+
+        if (pose_graph_optimizer_.optimize()) {
+            keyframe_store_.updateOptimizedPoses(pose_graph_optimizer_.nodePoses());
+            result.optimized = true;
+        } else {
+            pose_graph_optimizer_.removeLastEdge();
         }
     }
 
-    last_keyframe_id_ = keyframe_id;
     return result;
 }
 
 std::vector<Pose> BackendCoordinator::readOptimizedPoses() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::vector<Pose> poses;
     poses.reserve(keyframe_store_.size());
     for (const auto& keyframe : keyframe_store_.all()) {
@@ -285,16 +328,8 @@ std::vector<Pose> BackendCoordinator::readOptimizedPoses() const {
     return poses;
 }
 
-std::vector<Pose> BackendCoordinator::readRawPoses() const {
-    std::vector<Pose> poses;
-    poses.reserve(keyframe_store_.size());
-    for (const auto& keyframe : keyframe_store_.all()) {
-        poses.push_back(keyframe.raw_pose);
-    }
-    return poses;
-}
-
 PCLPointCloud BackendCoordinator::buildOptimizedMap() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     PCLPointCloud aggregated_map;
     const auto& keyframes = keyframe_store_.all();
     if (keyframes.empty()) {
@@ -352,6 +387,7 @@ PCLPointCloud BackendCoordinator::buildOptimizedMap() const {
 }
 
 PCLPointCloud BackendCoordinator::buildDenseOptimizedMap() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     PCLPointCloud dense_map;
     const auto& keyframes = keyframe_store_.all();
     if (keyframes.empty()) {
