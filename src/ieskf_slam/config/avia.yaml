@@ -45,14 +45,14 @@ back_end:
   map_voxel_leaf_size: 0.5
   odom_translation_information: 100.0
   odom_rotation_information: 150.0
-  scan_context_distance_threshold: 0.18
+  scan_context_distance_threshold: 0.15
   loop_candidate_max_height_diff_m: 1.5
   loop_candidate_max_yaw_diff_deg_from_odom: 35.0
   loop_max_translation_delta_from_guess: 3.0
   loop_max_rotation_delta_deg_from_guess: 20.0
   icp_max_iterations: 30
-  icp_max_correspondence_distance: 6.0
-  icp_fitness_threshold: 0.8
+  icp_max_correspondence_distance: 5.0
+  icp_fitness_threshold: 0.4
   loop_translation_information: 30.0
   loop_rotation_information: 50.0
   optimizer_max_iterations: 15

@@ -13,7 +13,7 @@ constexpr double kWarnKeyframeGapSec = 5.0;
 
 BackendCoordinator::BackendCoordinator(const std::string& config_path, const std::string& prefix)
     : ModuleBase(config_path, prefix, "BackEnd"),
-      loop_registrar_(20, 6.0, 0.8, 30.0, 50.0, 35.0 * M_PI / 180.0, 3.0,
+      loop_registrar_(30, 5.0, 0.4, 30.0, 50.0, 35.0 * M_PI / 180.0, 3.0,
                       20.0 * M_PI / 180.0),
       pose_graph_optimizer_(15, 1e-4, 1e-6) {
     double keyframe_rotation_thresh_deg = 10.0;
@@ -31,12 +31,12 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
     readParam("loop_submap_num_keyframes_each_side", loop_submap_num_keyframes_each_side_, 10);
     readParam("odom_translation_information", odom_translation_information_, 100.0);
     readParam("odom_rotation_information", odom_rotation_information_, 150.0);
-    double scan_context_distance_threshold = 0.18;
+    double scan_context_distance_threshold = 0.15;
     double loop_candidate_max_height_diff_m = 1.5;
     double loop_candidate_max_yaw_diff_deg_from_odom = 35.0;
     double loop_max_translation_delta_from_guess = 3.0;
     double loop_max_rotation_delta_deg_from_guess = 20.0;
-    readParam("scan_context_distance_threshold", scan_context_distance_threshold, 0.18);
+    readParam("scan_context_distance_threshold", scan_context_distance_threshold, 0.15);
     readParam("loop_candidate_max_height_diff_m", loop_candidate_max_height_diff_m, 1.5);
     readParam("loop_candidate_max_yaw_diff_deg_from_odom",
               loop_candidate_max_yaw_diff_deg_from_odom, 35.0);
@@ -46,13 +46,13 @@ BackendCoordinator::BackendCoordinator(const std::string& config_path, const std
               loop_max_rotation_delta_deg_from_guess, 20.0);
 
     int icp_max_iterations = 30;
-    double icp_max_correspondence_distance = 6.0;
-    double icp_fitness_threshold = 0.8;
+    double icp_max_correspondence_distance = 5.0;
+    double icp_fitness_threshold = 0.4;
     double loop_translation_information = 30.0;
     double loop_rotation_information = 50.0;
     readParam("icp_max_iterations", icp_max_iterations, 30);
-    readParam("icp_max_correspondence_distance", icp_max_correspondence_distance, 6.0);
-    readParam("icp_fitness_threshold", icp_fitness_threshold, 0.8);
+    readParam("icp_max_correspondence_distance", icp_max_correspondence_distance, 5.0);
+    readParam("icp_fitness_threshold", icp_fitness_threshold, 0.4);
     readParam("loop_translation_information", loop_translation_information, 30.0);
     readParam("loop_rotation_information", loop_rotation_information, 50.0);
     loop_registrar_ = ICPLoopRegistrar(icp_max_iterations, icp_max_correspondence_distance,
