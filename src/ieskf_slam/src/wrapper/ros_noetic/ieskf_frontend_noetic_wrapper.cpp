@@ -21,6 +21,7 @@ namespace ROSNoetic{
         ROS_DEBUG_STREAM("imu_topic: " << imu_topic);
         ROS_DEBUG_STREAM("config_file_name: " << config_file_name);
 
+        config_file_name = sanitizeFileName(config_file_name);
         front_end_ptr = std::make_shared<IESKFSLAM::FrontEnd>(CONFIG_DIR + config_file_name, "front_end");
 
         cloud_subscriber = nh.subscribe(lidar_topic, 100, &IESKFFrontEndWrapper::lidarCloudMsgCallBack, this);
@@ -31,6 +32,7 @@ namespace ROSNoetic{
         path_publisher = nh.advertise<nav_msgs::Path>("path", 100);
         nh.param<std::string>("front_end/anomaly_log_file_name", anomaly_log_file_name_,
                               "frontend_publish_anomalies.txt");
+        anomaly_log_file_name_ = sanitizeFileName(anomaly_log_file_name_);
         anomaly_log_file_.open(RESULT_DIR + anomaly_log_file_name_, std::ios::out | std::ios::trunc);
         if (!anomaly_log_file_.is_open()) {
             ROS_WARN_STREAM("failed to open frontend anomaly log file: " << RESULT_DIR + anomaly_log_file_name_);
@@ -50,7 +52,7 @@ namespace ROSNoetic{
         }
         else{
             ROS_ERROR_STREAM("unsupported lidar type: " << lidar_type);
-            exit(100);
+            throw std::runtime_error("unsupported lidar type: " + std::to_string(lidar_type));
         }
 
         run();

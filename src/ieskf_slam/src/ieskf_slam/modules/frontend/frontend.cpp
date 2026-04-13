@@ -31,6 +31,7 @@ namespace IESKFSLAM{
         readParam("extrin_t",extrin_v,std::vector<double>());
         readParam("enable_record", enable_record, false);
         readParam("record_file_name", record_file_name, std::string("default.txt"));
+        record_file_name = sanitizeFileName(record_file_name);
         if (enable_record) {
             record_file.open(RESULT_DIR + record_file_name, std::ios::out | std::ios::app);
         }

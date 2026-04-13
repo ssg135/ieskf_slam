@@ -20,7 +20,7 @@ namespace ROSNoetic
         : backend_coordinator([&nh]() {
               std::string config_file_name;
               nh.param<std::string>("wrapper/config_file_name", config_file_name, "");
-              return config_file_name.empty() ? std::string("") : CONFIG_DIR + config_file_name;
+              return config_file_name.empty() ? std::string("") : CONFIG_DIR + sanitizeFileName(config_file_name);
           }(),
           "back_end")
     {
@@ -42,6 +42,10 @@ namespace ROSNoetic
                               "optimized_map_dense.pcd");
         nh.param<std::string>("back_end/anomaly_log_file_name", anomaly_log_file_name_,
                               "backend_anomalies.txt");
+        raw_record_file_name_ = sanitizeFileName(raw_record_file_name_);
+        optimized_record_file_name_ = sanitizeFileName(optimized_record_file_name_);
+        dense_map_file_name_ = sanitizeFileName(dense_map_file_name_);
+        anomaly_log_file_name_ = sanitizeFileName(anomaly_log_file_name_);
         anomaly_log_file_.open(RESULT_DIR + anomaly_log_file_name_, std::ios::out | std::ios::trunc);
         if (!anomaly_log_file_.is_open()) {
             ROS_WARN_STREAM("failed to open backend anomaly log file: " << RESULT_DIR + anomaly_log_file_name_);
