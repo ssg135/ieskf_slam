@@ -131,7 +131,7 @@ A new keyframe is created when **any** of the following conditions is met:
 
 Each keyframe's downsampled cloud is converted to a Scan Context descriptor (20 rings x 60 sectors, max height encoding). The descriptor is compared against a KD-tree of historical ring-keys, excluding the most recent 30 keyframes (`NUM_EXCLUDE_RECENT`). The top 3 nearest neighbors (`NUM_CANDIDATES_FROM_TREE`) are evaluated pairwise, and the best match below `scan_context_distance_threshold` becomes a loop candidate.
 
-**Key insight**: The SC distance is `1 - cosine_similarity`, ranging from 0 (identical) to 2 (opposite). The default threshold of 0.18 means requiring cosine similarity >= 0.82.
+**Key insight**: The SC distance is `1 - cosine_similarity`, ranging from 0 (identical) to 2 (opposite). The default threshold of 0.15 means requiring cosine similarity >= 0.85.
 
 ### Stage 3: Height-Difference Filter (commit 877fd168)
 
@@ -196,7 +196,7 @@ All parameters are set in the YAML config files under `config/`. Parameters are 
 
 | Parameter | Type | Default | Unit | Description |
 |---|---|---|---|---|
-| `scan_context_distance_threshold` | double | 0.18 | - | Max SC distance to accept a loop candidate. Range [0, 2]; lower = stricter. **Primary gate for false positive control.** |
+| `scan_context_distance_threshold` | double | 0.15 | - | Max SC distance to accept a loop candidate. Range [0, 2]; lower = stricter. **Primary gate for false positive control.** |
 
 **Hardcoded Scan Context constants** (in `Scancontext.h`):
 
@@ -224,8 +224,8 @@ All parameters are set in the YAML config files under `config/`. Parameters are 
 | Parameter | Type | Default | Unit | Description |
 |---|---|---|---|---|
 | `icp_max_iterations` | int | 30 | - | Maximum ICP iterations |
-| `icp_max_correspondence_distance` | double | 6.0 | m | Maximum point-to-point correspondence distance for ICP |
-| `icp_fitness_threshold` | double | 0.8 | m^2 | Maximum mean squared correspondence distance to accept ICP result. **Critical for false positive control.** |
+| `icp_max_correspondence_distance` | double | 5.0 | m | Maximum point-to-point correspondence distance for ICP |
+| `icp_fitness_threshold` | double | 0.4 | m^2 | Maximum mean squared correspondence distance to accept ICP result. **Critical for false positive control.** |
 
 ### Back-End: Consistency Checks
 
